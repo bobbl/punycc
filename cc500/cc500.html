@@ -1,0 +1,148 @@
+<html>
+<head>
+<title>CC500: a tiny self-hosting C compiler</title>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+</head>
+<body>
+<h1>CC500: a tiny self-hosting C compiler</h1>
+
+<h2>Introduction</h2>
+
+<p>I wrote this tiny compiler, which translates a subset of C into x86
+machine code, for fun. It has no use, unless it counts as educational.
+I called it CC500 because I initally guessed it would take about 500
+lines. It turned out to be about 600 lines even without the comments
+and blank lines. With the comments and blank lines it has about 750
+lines. It could be made shorter, but I wanted the code to be clear and
+simple rather than obfuscated.</p>
+
+<h2>Download</h2>
+
+<ul>
+<li><a href="cc500.c">cc500.c</a> - just the code</li>
+</ul>
+
+<p>Compilation:</p>
+
+<pre>gcc cc500.c -o cc500_1
+</pre>
+
+<p>Self-compilation:</p>
+
+<pre>./cc500_1 &lt; cc500.c &gt; cc500_2
+chmod +x cc500_2
+</pre>
+
+
+<h2>How it works</h2>
+
+<p>The compiler reads the whole program in C from stdin and writes an
+ELF binary for Linux/x86 to stdout. The ELF binary is somewhat
+non-standard as it consists of a single section that is both writable
+and executable. It seems to work for me on a real Linux box, but it
+might cause problems on an emulator.</p>
+
+<p>No libraries are used. Tiny, machine-code implementations of
+exit(), getchar(), malloc() and putchar() are included in the binary
+that is generated. There is no free() as malloc() is just sbrk(),
+really, implemented with two calls to brk().</p>
+
+<p>There is almost no error-checking. With some invalid C programs the
+compiler calls exit(1) instead of generating a binary, but in most
+cases it generates a binary that crashes when you run it.</p>
+
+<p>There is no preprocessor. The lexer looks for tokens that match one
+of the following Perl regular expressions: <tt>/[a-z0-9_]+/</tt>,
+<tt>/[&lt;=&gt;|&amp;!]+/</tt>, <tt>/'[^']*'/</tt>,
+<tt>/"[^"]*"/</tt>, <tt>/./</tt>. Traditional C-style
+comments are handled, but not C++-style comments.</p>
+
+<p>The symbol table is implemented with a single array of char. The
+type of each symbol is recorded as 'D' (defined global), 'U'
+(undefined global), 'L' (local variable) or 'A' (argument of a
+function) - see sym_get_value(). There is also an address recorded for
+each symbol, but no type, as there is no type-checking and all arrays
+are assumed to be arrays of char. The address of an 'L' or 'A' is its
+position on the stack. The address of a 'D' is the position of that
+function or global variable in the binary. The address of a 'U' is
+also a pointer into the binary, but a pointer to where the symbol was
+last used and the head of a linked list of all the forward references
+to that symbol.</p>
+
+<p>Scoping rules for local variables are implemented correctly as it is
+easy to do so: at the end of a compound statement the pointer to the
+end of the symbol table is restored to what it was at the start of the
+compound statement - see the assignment to table_pos in statement().</p>
+
+<p>I started off writing CC500 without local variables, but it felt very
+unnatural. Nested scopes are an essential part of C and it is not easy
+to write a recursive-descent parser without automatic variables.</p>
+
+<p>It is assumed that all variables, arguments and return values are
+char * or int, though the compiler does not even parse the types, let
+alone record them in the symbol table. The functions that implement
+the recursive-descent parser return 1, 2 or 3, corresponding to a
+"char lval", "int lval" or "other" - see promote().</p>
+
+<p>Each parsing function is preceded by a comment that documents the
+syntactic structures recognised, in an obvious notation. In some cases
+the code accepts additional, incorrect structures in addition to what
+is documented in the comment. Only a tiny subset of C's operators are
+accepted: just the ones I needed while writing the compiler. There are
+no unary operators: instead of the indirection operator * you must use
+x[y], where it is assumed that x is char * and y is int. The only
+statements recognised are compound statements, expressions, if, while
+and return. Local variable declarations, with initialisers, are
+treated as a kind of statement. (If you write something like <tt>if
+(x) int y;</tt> the compiler will not complain, but the binary will
+crash.)</p>
+
+<p>There are no arbitary limits on the length of symbols, number of
+symbols are the like: all three buffers (token, table and code) are
+supposed to be automatically extended as required by calls to
+my_realloc().</p>
+
+<h2>Extending it</h2>
+
+<p>Some simple and obvious enhancements would be to print an
+appropriate message message when an error is detected, check for
+undefined globals, and allow main() to be anywhere in the file.</p>
+
+<p>It would be easy to extend the compiler to handle the remaining
+operators and statement types of C. To implement break and continue
+you would probably add additional arguments to the parsing functions
+that record the address and stack height of the current loop. The
+easiest way to implement switch statements might be to add an argument
+that records the location of the previous case label in the current
+switch statement; a case label would then be translated with a
+comparison and a branch forwards to the next case label. In general, C
+is quite amenable to direct translation into machine code without
+going through an IR (intermediate representation).</p>
+
+<p>Extending the type system would be a bit more challenging. You
+could correctly implement scalars and pointers, with type checking, by
+adding a single integer field to the symbol table to record the type.
+However, if you wanted to implement structs, or function pointers with
+proper type checking, you would need a recursive data structure to
+represent the types. It is interesting, but not really surprising,
+that you start to start to need structs in the implementation language
+at roughly the same point that you start to implement them. However,
+C's types get interesting even without structs, unions and typedefs.
+For example, <tt>void (*(*f())(void (*)(void)))(void);</tt> declares a
+function that returns a pointer to a function that takes a pointer to
+a function as an argument and returns another pointer to a function. I
+must admit to finding that part of C's syntax rather difficult to
+parse mentally. I'm glad we have computers to do it for us.</p>
+
+<h2>Links</h2>
+
+<ul>
+<li><a href="https://web.archive.org/web/20160604041431/http://rano.org/bcompiler.html">bcompiler</a> - Bootstrapping a simple compiler from nothing</li>
+<li><a href="https://web.archive.org/web/20160604041431/http://bellard.org/otcc/">OTCC</a> - The smallest self compiling pseudo C compiler</li>
+<li><a href="https://web.archive.org/web/20160604041431/http://www.muppetlabs.com/~breadbox/software/tiny/">Tiny ELF programs</a> by Brian Raiter</li>
+</ul>
+
+<p>Edmund Grimley Evans</p>
+
+</body>
+</html>
