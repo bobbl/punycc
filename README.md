@@ -3,12 +3,12 @@ Puny C
 
 > *Limited expressiveness unlimited portability*
 
-A subset of C that is enough to build a self-compiling compiler.
+Very small cross compiler for a subset of C.
 
 Features
+  * Supported target and host architectures: **RISC-V**, **ARM-Thumb** and **x86**.
   * Valid source code for Puny C is also valid C99 and can be written in a way
     that gcc or clang compile it without any warning.
-  * Very small cross compiler for RISC-V.
   * Code generation is designed to be easily portable to other target
     architectures.
   * Fast compilation, small code size.
