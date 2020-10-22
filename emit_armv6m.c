@@ -12,6 +12,12 @@ unsigned syms_head;
 unsigned stack_pos;
 unsigned num_params;
 
+unsigned char *immpos;
+unsigned char *immpool;
+unsigned immpos_base;
+unsigned immpos_pos;
+unsigned immpool_pos;
+
 void set_32bit(unsigned char *p, unsigned x);
 unsigned get_32bit(unsigned char *p);
 void error(unsigned no);
@@ -64,19 +70,95 @@ void emit_scope_end(unsigned save)
     stack_pos = save;
 }
 
+void empty_immpool()
+{
+    if (code_pos & 2) { /* align to 4 bytes */
+        emit(170);
+        emit(170);
+    }
+    if (code_pos > immpos_base + 1020) exit(200);
+        /* too late to empty imm pool: imm pool to far away */
+
+    unsigned delta = 255 - ((code_pos - immpos_base) >> 2);
+
+    /* write pool data */
+    unsigned i = 0;
+    while (i < immpool_pos) {
+        emit(immpool[i]);
+        i = i + 1;
+    }
+
+    /* fix imm offsets */
+    i = 0;
+    while (i < immpos_pos) {
+        unsigned pos = immpos_base + immpos[i] + (immpos[i + 1] << 8);
+        buf[pos] = buf[pos] - delta;
+        i = i + 2;
+    }
+
+    immpos_pos = 0;
+    immpool_pos = 0;
+}
+
+unsigned emit_jump(unsigned destination)
+{
+    unsigned disp = (destination - code_pos - 4) >> 1;
+    emit(disp);
+    emit(((disp >> 8) & 7) + 224);
+    unsigned r = code_pos - 2;
+
+/* Not so simple: first branch must jump over pool
+    if (immpool_pos) empty_immpool();
+*/
+
+    return r;
+}
+
+
+void ofs_from_immpool()
+{
+    if (immpos_pos == 0) {
+        /* start collection for a new pool */
+        immpos_base = code_pos & 4294967292; /* ~3 */
+    }
+    unsigned pos = code_pos - immpos_base;
+
+    emit(((immpos_base + immpool_pos - (code_pos & 4294967292/*~3*/))
+         >> 2) + 254);
+
+    immpos[immpos_pos] = pos;
+    immpos[immpos_pos + 1] = pos >> 8;
+    immpos_pos = immpos_pos + 2;
+}
+
+
+void check_immpool()
+{
+    if (immpool_pos) {
+        if (code_pos >= (immpos_base + 980)) {
+            /* 1024 - 980 = 44 => circa 20 instructions before the pool is too
+               far away from the first reference */
+            emit_jump((code_pos + immpool_pos + 4) & 4294967292 /*~3*/);
+            empty_immpool();
+        }
+    }
+}
+
 void emit_imm(unsigned reg, unsigned imm)
 {
     if (imm < 256) {
         emit(imm); emit(32 + reg);              /* ?? 20   MOVS reg, imm */
     }
     else {
-        if (code_pos & 2) {
-            emit(0); emit(191);                 /* 00 BF   NOP */
-        }
-        emit(0); emit(72 + reg);                /* 02 48   LDR reg, [PC, #0] */
-        emit(1); emit(224);                     /* 01 E0   B $+6 */
-        emit32(imm);
+        /* get index in pool */
+        ofs_from_immpool();
+        emit(72 + reg);                         /* ?? 48   LDR reg, [PC, #?] */
+
+        /* write to pool */
+        set_32bit(immpool + immpool_pos, imm);
+        immpool_pos = immpool_pos + 4;
     }
+    check_immpool();
 }
 
 void emit_number(unsigned x)
@@ -86,15 +168,24 @@ void emit_number(unsigned x)
 
 void emit_string(unsigned len, char *s)
 {
-    if (code_pos & 2) {
-        emit(0); emit(191);                     /* 00 BF   nop */
+    /* get index in pool */
+    ofs_from_immpool();
+    emit(160);                                  /* ?? A0   ADD R0, [PC, #?] */
+
+    /* write to pool */
+    unsigned i = 0;
+    while (i < len) {
+        immpool[immpool_pos + i] = s[i];
+        i = i + 1;
     }
-    unsigned disp = (len) & 2046;
-    emit(0); emit(160);                         /* 00 A0   add t0, pc, #0 */
-    emit(disp >> 1);
-    emit(((disp >> 9) & 7) + 224);
-    emit_multi(len, s);
-    emit_multi(2 - (len & 1), "\x00\x00");  /* add ending 0 and align to 4 */
+    len = (len + 4) & 4294967292; /*~3*/
+    while (i < len) {
+        immpool[immpool_pos + i] = 0;
+        i = i + 1;
+    }
+    immpool_pos = immpool_pos + len;
+
+    check_immpool();
 }
 
 void emit_store(unsigned global, unsigned ofs)
@@ -129,7 +220,7 @@ void emit_index(unsigned global, unsigned ofs)
     }
     else {
         ofs = stack_pos - ofs + num_params + 1;
-        emit(ofs); emit(153);                   /* ?? 98   LDR R1, [SP, #ofs] */
+        emit(ofs); emit(153);                   /* ?? 99   LDR R1, [SP, #ofs] */
     }
     emit(8); emit(68);                          /* 08 44   ADD R0, R1 */
 }
@@ -264,8 +355,7 @@ unsigned emit_branch_if0()
 {
     emit(0); emit(40);                          /* 00 28   CMP R0, #0 */
     emit(0); emit(209);                         /* 00 D1   BNE ... */
-emit(0);
-emit(0);
+    emit_jump(0 /* dont care */);
     return code_pos - 2;
 }
 
@@ -282,8 +372,7 @@ unsigned emit_branch_if_cond(unsigned op)
     char *bcc = "\xd1\xd0\xd2\xd3\xd9\xd8";
     emit(0);
     emit(bcc[(op ^ 1) - 16]);
-emit(0);
-emit(0);
+    emit_jump(0 /* dont care */);
     return code_pos - 2;
 }
 
@@ -311,14 +400,6 @@ unsigned emit_fix_call_here(unsigned pos)
     return next;
 }
 
-unsigned emit_jump(unsigned destination)
-{
-    unsigned disp = (destination - code_pos - 4) >> 1;
-    emit(disp);
-    emit(((disp >> 8) & 7) + 224);
-    return code_pos - 2;
-}
-
 void emit_enter(unsigned n)
 {
     emit(0); emit(181);                         /* 00 B5   PUSH {LR} */
@@ -329,6 +410,7 @@ void emit_return()
 {
     emit_pop(stack_pos);
     emit(0); emit(189);                         /* 00 BD   POP {PC} */
+    if (immpool_pos) empty_immpool();
 }
 
 unsigned emit_local_var()
@@ -349,6 +431,12 @@ unsigned emit_global_var()
 
 unsigned emit_begin()
 {
+    immpos = malloc(1024);
+    immpool = malloc(1024);
+    immpos_pos = 0;
+    immpos_base = 0;
+    immpool_pos = 0;
+
     stack_pos = 0;
     emit_multi(92, "\x7f\x45\x4c\x46\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x28\x00\x01\x00\x00\x00\x55\x00\x01\x00\x34\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x34\x00\x20\x00\x01\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x01\x00........\x07\x00\x00\x00\x00\x10\x00\x00\x00\x00\x00\x00\x01\x27\x00\xdf");
 /* \x04\x00\x8f\xe2\x01\x00\x80\xe3\x30\xff\x2f\xe1
