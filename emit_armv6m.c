@@ -142,12 +142,12 @@ void check_immpool()
 void e_imm(unsigned reg, unsigned imm)
 {
     if (imm < 256) {
-        emit(imm); emit(32 + reg);              /* ?? 20   MOVS reg, imm */
+        emit(imm); emit(reg + 32);              /* ?? 20   MOVS reg, imm */
     }
     else {
         /* get index in pool */
         ofs_from_immpool();
-        emit(72 + reg);                         /* ?? 48   LDR reg, [PC, #?] */
+        emit(reg + 72);                         /* ?? 48   LDR reg, [PC, #?] */
 
         /* write to pool */
         set_32bit(immpool + immpool_pos, imm);
@@ -271,7 +271,28 @@ void emit_call(unsigned defined, unsigned sym, unsigned ofs, unsigned pop,
 void emit_operation(unsigned op)
 {
     stack_pos = stack_pos - 1;
-    emit16(48130);                              /* 02 BC   POP {R1} */
+
+    /* optimization for 8 bit immm */
+    if ((buf[code_pos - 1] == 32)               /* 20   MOVS R0, imm */
+        & (buf[code_pos - 3] == 180)            /* B4   PUSH {R0} */
+        & (buf[code_pos - 4] == 1))             /* 01 */
+    {
+        code_pos = code_pos - 4;
+        if (op < 3) { /* LSL or LSR */
+            emit16(  ((buf[code_pos + 2] & 31) << 6)
+                + ((op - 1) << 11));    /* LSLS/LSRS R0, R0, (imm & 31) */
+            return;
+        }
+        emit(buf[code_pos + 2]);
+        if ((op == 3) | (op == 6)) {            /* SUBS or ADDS */
+            if (op == 3) emit(56);
+            else emit(48);
+            return;
+        }
+        emit(33);                               /* MOVS R1, imm */
+            /* remaining ops are commutative (R0+R1 = R1+R0) */
+    }
+    else emit16(48130);                         /* 02 BC   POP {R1} */
 
     char *code = "\x00\x00\x00\x00\x81\x40\x08\x46\xc1\x40\x08\x46\x08\x1a\x00\x00\x08\x43\x00\x00\x48\x40\x00\x00\x08\x44\x00\x00\x08\x40\x00\x00\x48\x43\x00\x00";
     unsigned len = 2;
