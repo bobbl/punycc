@@ -111,19 +111,19 @@ unsigned emit_jump(unsigned destination)
     return code_pos - 2;
 }
 
-void ofs_from_immpool()
+void immpool_ref(unsigned ip)
 {
     if (immpos_pos == 0) {
         /* start collection for a new pool */
         immpos_base = code_pos & 4294967292; /* ~3 */
     }
-    unsigned pos = code_pos - immpos_base;
+    unsigned cp = code_pos - immpos_base;
 
-    emit(((immpos_base + immpool_pos - (code_pos & 4294967292/*~3*/))
+    emit(((immpos_base + ip - (code_pos & 4294967292/*~3*/))
          >> 2) + 254);
 
-    immpos[immpos_pos] = pos;
-    immpos[immpos_pos + 1] = pos >> 8;
+    immpos[immpos_pos] = cp;
+    immpos[immpos_pos + 1] = cp >> 8;
     immpos_pos = immpos_pos + 2;
 }
 
@@ -139,19 +139,30 @@ void check_immpool()
     }
 }
 
+unsigned immpool_lookup(unsigned imm)
+{
+    unsigned i = 0;
+    while (i < immpool_pos) {
+        unsigned v = get_32bit(immpool + i);
+        if (v == imm) return i;
+        i = i + 4;
+    }
+
+    /* not found => add to pool */
+    set_32bit(immpool + i, imm);
+    immpool_pos = i + 4;
+    return i;
+}
+
 void e_imm(unsigned reg, unsigned imm)
 {
     if (imm < 256) {
         emit(imm); emit(reg + 32);              /* ?? 20   MOVS reg, imm */
     }
     else {
-        /* get index in pool */
-        ofs_from_immpool();
+        /* emit index in pool */
+        immpool_ref(immpool_lookup(imm));
         emit(reg + 72);                         /* ?? 48   LDR reg, [PC, #?] */
-
-        /* write to pool */
-        set_32bit(immpool + immpool_pos, imm);
-        immpool_pos = immpool_pos + 4;
     }
     check_immpool();
 }
@@ -163,24 +174,20 @@ void emit_number(unsigned x)
 
 void emit_string(unsigned len, char *s)
 {
-    /* get index in pool */
-    ofs_from_immpool();
+    /* emit index in pool */
+    immpool_ref(immpool_pos);
     emit(160);                                  /* ?? A0   ADD R0, [PC, #?] */
 
     /* write to pool */
+    unsigned aligned = (len + 4) & 4294967292; /*~3*/
     unsigned i = 0;
-    while (i < len) {
-        immpool[immpool_pos + i] = s[i];
+    while (i < aligned) {
+        unsigned b = 0;
+        if (i < len) b = s[i];
+        immpool[immpool_pos + i] = b;
         i = i + 1;
     }
-
-    /* align pool */
-    len = (len + 4) & 4294967292; /*~3*/
-    while (i < len) {
-        immpool[immpool_pos + i] = 0;
-        i = i + 1;
-    }
-    immpool_pos = immpool_pos + len;
+    immpool_pos = immpool_pos + aligned;
 
     check_immpool();
 }
@@ -399,7 +406,7 @@ void emit_fix_jump_here(unsigned insn_pos)
 
 void emit_fix_branch_here(unsigned insn_pos)
 {
-/*
+/* short branch:
     unsigned disp = code_pos - insn_pos - 4;
     if ((disp + 256) >= 512) error (110);
     buf[insn_pos] = disp >> 1;
