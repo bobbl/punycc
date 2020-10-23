@@ -105,6 +105,7 @@ do
             ;;
 
         disasm)
+            cd ..
             case $arch in
                 x86)    objdump -b binary -m i386 -M intel -D "$2"
                         ;;
@@ -114,6 +115,7 @@ do
                         ;;
             esac
             shift
+            cd build
             ;;
 
         asm-riscv)

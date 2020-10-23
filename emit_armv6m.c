@@ -38,6 +38,12 @@ void emit_multi(unsigned n, char *s)
     }
 }
 
+void emit16(unsigned n)
+{
+    emit(n);
+    emit(n >> 8);
+}
+
 void emit32(unsigned n)
 {
     emit(n);
@@ -48,7 +54,7 @@ void emit32(unsigned n)
 
 void emit_push()
 {
-    emit(1); emit(180);                         /* 01 B4   push {r0} */
+    emit16(46081);                         /* 01 B4   push {r0} */
     stack_pos = stack_pos + 1;
 }
 
@@ -73,8 +79,7 @@ void emit_scope_end(unsigned save)
 void empty_immpool()
 {
     if (code_pos & 2) { /* align to 4 bytes */
-        emit(170);
-        emit(170);
+        emit16(0);
     }
     if (code_pos > immpos_base + 1020) exit(200);
         /* too late to empty imm pool: imm pool to far away */
@@ -102,18 +107,9 @@ void empty_immpool()
 
 unsigned emit_jump(unsigned destination)
 {
-    unsigned disp = (destination - code_pos - 4) >> 1;
-    emit(disp);
-    emit(((disp >> 8) & 7) + 224);
-    unsigned r = code_pos - 2;
-
-/* Not so simple: first branch must jump over pool
-    if (immpool_pos) empty_immpool();
-*/
-
-    return r;
+    emit16((((destination - code_pos - 4) >> 1) & 2047) + 57344);
+    return code_pos - 2;
 }
-
 
 void ofs_from_immpool()
 {
@@ -131,7 +127,6 @@ void ofs_from_immpool()
     immpos_pos = immpos_pos + 2;
 }
 
-
 void check_immpool()
 {
     if (immpool_pos) {
@@ -144,7 +139,7 @@ void check_immpool()
     }
 }
 
-void emit_imm(unsigned reg, unsigned imm)
+void e_imm(unsigned reg, unsigned imm)
 {
     if (imm < 256) {
         emit(imm); emit(32 + reg);              /* ?? 20   MOVS reg, imm */
@@ -163,7 +158,7 @@ void emit_imm(unsigned reg, unsigned imm)
 
 void emit_number(unsigned x)
 {
-    emit_imm(0, x);
+    e_imm(0, x);
 }
 
 void emit_string(unsigned len, char *s)
@@ -178,6 +173,8 @@ void emit_string(unsigned len, char *s)
         immpool[immpool_pos + i] = s[i];
         i = i + 1;
     }
+
+    /* align pool */
     len = (len + 4) & 4294967292; /*~3*/
     while (i < len) {
         immpool[immpool_pos + i] = 0;
@@ -188,53 +185,51 @@ void emit_string(unsigned len, char *s)
     check_immpool();
 }
 
-void emit_store(unsigned global, unsigned ofs)
+void access_var(unsigned global, unsigned ofs, unsigned store, unsigned index)
 {
     if (global) {
-        emit_imm(1, ofs);
-        emit(8); emit(96);                      /* 08 60   STR R0, [R1] */
+        e_imm(1, ofs);
+        emit(8 + index); emit(104 - store);     /* 09 68   LDR R1, [R1] */
     }
     else {
-        ofs = stack_pos - ofs + num_params + 1;
-        emit(ofs); emit(144);                   /* ?? 90   STR R0, [SP, #ofs] */
+        emit(stack_pos - ofs + num_params + 1);
+        emit(152 - store + index);              /* ?? 99   LDR R1, [SP, #ofs] */
     }
+}
+
+void emit_store(unsigned global, unsigned ofs)
+{
+    access_var(global, ofs, 8, 0);
+    /* global   -- -- 08 60     LDR R1, imm32 ; STR R0, [R1]
+       local    -- 90           STR R0, [SP, #ofs] */
 }
 
 void emit_load(unsigned global, unsigned ofs)
 {
-    if (global) {
-        emit_imm(0, ofs);
-        emit(0); emit(104);                     /* 08 68   LDR R0, [R0] */
-    }
-    else {
-        ofs = stack_pos - ofs + num_params + 1;
-        emit(ofs); emit(152);                   /* ?? 98   LDR R0, [SP, #ofs] */
-    }
+    access_var(global, ofs, 0, 0);
+    /* global   -- -- 08 68     LDR R1, imm32 ; LDR R0, [R1]
+       local    -- 98           LDR R0, [SP, #ofs] */
 }
 
 void emit_index(unsigned global, unsigned ofs)
 {
-    if (global) {
-        emit_imm(1, ofs);
-        emit(9); emit(104);                     /* 09 68   LDR R1, [R1] */
-    }
-    else {
-        ofs = stack_pos - ofs + num_params + 1;
-        emit(ofs); emit(153);                   /* ?? 99   LDR R1, [SP, #ofs] */
-    }
-    emit(8); emit(68);                          /* 08 44   ADD R0, R1 */
+    access_var(global, ofs, 0, 1);
+    /* global   -- -- 09 68     LDR R1, imm32 ; LDR R1, [R1]
+       local    -- 99           LDR R1, [SP, #ofs] */
+    emit16(17416);
+    /*          08 44           ADD R0, R1 */
 }
 
 void emit_pop_store_array()
 {
     stack_pos = stack_pos - 1;
-    emit(2); emit(188);                         /* 02 BC   POP {R1} */
-    emit(8); emit(112);                         /* 08 70   STRB R0, [R1] */
+    emit16(48130);                              /* 02 BC   POP {R1} */
+    emit16(28680);                              /* 08 70   STRB R0, [R1] */
 }
 
 void emit_load_array()
 {
-    emit(0); emit(120);                         /* 00 78   LDRB R0, [R0] */
+    emit16(30720);                              /* 00 78   LDRB R0, [R0] */
 }
 
 unsigned emit_pre_call()
@@ -251,22 +246,19 @@ unsigned insn_bl(unsigned disp)
 {
     unsigned s = (disp >> 24) & 1;
 
-    return
-        3489722368 +
-        ((disp >> 12) & 1023) +
-        (s << 10) +
-
-        (((disp >> 1) & 2047) << 16) +
-        ((((disp >> 23) & 1) ^ s ^ 1) << 29) +
-        ((((disp >> 22) & 1) ^ s ^ 1) << 27);
+    return 4160811008
+        + ((disp >> 12) & 1023)
+        + (s << 10)
+        + ((disp & 4095) << 15)
+        - ((((disp >> 23) & 1) ^ s) << 29)
+        - ((((disp >> 22) & 1) ^ s) << 27);
 }
 
 void emit_call(unsigned defined, unsigned sym, unsigned ofs, unsigned pop,
                unsigned save)
 {
     if (defined) {                              /* defined function */
-        unsigned disp = ofs - code_pos - 4;
-        emit32(insn_bl(disp));
+        emit32(insn_bl(ofs - code_pos - 4));
     }
     else {                                      /* undefined function */
         set_32bit(buf + sym, code_pos);
@@ -279,83 +271,83 @@ void emit_call(unsigned defined, unsigned sym, unsigned ofs, unsigned pop,
 void emit_operation(unsigned op)
 {
     stack_pos = stack_pos - 1;
-    emit(2); emit(188);                         /* 02 BC   POP {R1} */
+    emit16(48130);                              /* 02 BC   POP {R1} */
 
-    if (op == 1) {
-        emit(129); emit(64);                    /* 81 40   LSLS R1, R0 */
-        emit(8); emit(70);                      /* 08 46   MOV R0, R1 */
-    }
-    else if (op == 2) {
-        emit(193); emit(64);                    /* C1 40   LSRS R1, R0 */
-        emit(8); emit(70);                      /* 08 46   MOV R0, R1 */
-    }
-    else if (op == 3) {
-        emit(8); emit(26);                      /* 08 1A   SUB R0, R1, R0 */
-    }
-    else if (op == 4) {
-        emit(8); emit(67);                      /* 08 43   ORRS R0, R1 */
-    }
-    else if (op == 5) {
-        emit(72); emit(64);                     /* 48 40   EORS R0, R1 */
-    }
-    else if (op == 6) {
-        emit(8); emit(68);                      /* 08 44   ADD R0, R1 */
-    }
-    else if (op == 7) {
-        emit(8); emit(64);                      /* 08 40   AND R0, R1 */
-    }
-    else if (op == 8) {
-        emit(72); emit(67);                     /* 48 43   MULS R0, R1 */
-    }
-    /* TODO: div and rem */
+    char *code = "\x00\x00\x00\x00\x81\x40\x08\x46\xc1\x40\x08\x46\x08\x1a\x00\x00\x08\x43\x00\x00\x48\x40\x00\x00\x08\x44\x00\x00\x08\x40\x00\x00\x48\x43\x00\x00";
+    unsigned len = 2;
+    if (op <= 2) len = 4;
+    emit_multi(len, code + (op << 2));
+        /* 81 40   LSLS R1, R0          <<*/
+        /* 08 46   MOV R0, R1 */
+
+        /* C1 40   LSRS R1, R0          >>*/
+        /* 08 46   MOV R0, R1 */
+
+        /* 08 1A   SUB R0, R1, R0       - */
+
+        /* 08 43   ORRS R0, R1          | */
+
+        /* 48 40   EORS R0, R1          ^ */
+
+        /* 08 44   ADD R0, R1           + */
+
+        /* 08 40   AND R0, R1           & */
+
+        /* 48 43   MULS R0, R1          * */
+
+        /* TODO: / and % */
 }
 
 void emit_comp(unsigned op)
 {
     stack_pos = stack_pos - 1;
-    emit(2); emit(188);                         /* 02 BC   POP {R1} */
+    emit16(48130);                              /* 02 BC   POP {R1} */
 
-    if (op == 16) {                             /* == */
-        emit(64); emit(26);                     /* 40 1A   SUBS R0, R0, R1 */
-        emit(65); emit(66);                     /* 41 42   RSBS R1, R0, #0 */
-        emit(72); emit(65);                     /* 48 41   ADCS R0, R1 */
-    }
-    else if (op == 17) {                        /* != */
-        emit(64); emit(26);                     /* 40 1A   SUBS R0, R0, R1 */
-        emit(65); emit(66);                     /* 41 42   RSBS R1, R0, #0 */
-        emit(136); emit(65);                    /* 88 41   SBCS R0, R1 */
-    }
-    else if (op == 18) {                        /* < */
-        emit_multi(6, "\x81\x42\x80\x41\x40\x42");
-            /* 81 42   CMP R1, R0 */
-            /* 80 41   SBCS R0, R0 */
-            /* 40 42   RSBS R0, R0, #0 */
-    }
-    else if (op == 21) {                        /* >= */
-        emit(0); emit(34);                      /* 00 22   MOVS R2, #0 */
-        emit(136); emit(66);                    /* 88 42   CMP R0, R1 */
-        emit(82); emit(65);                     /* 52 41   ADCS R2, R2 */
-        emit(16); emit(0);                      /* 10 00   MOVS R0, R2 */
-    }
-    else if (op == 20) {                        /* > */
-        emit_multi(6, "\x88\x42\x80\x41\x40\x42");
-            /* 88 42   CMP R0, R1 */
-            /* 80 41   SBCS R0, R0 */
-            /* 40 42   RSBS R0, R0, #0 */
-    }
-    else /*if (op == 21)*/ {                    /* <= */
-        emit(0); emit(34);                      /* 00 22   MOVS R2, #0 */
-        emit(129); emit(66);                    /* 81 42   CMP R1, R0 */
-        emit(82); emit(65);                     /* 52 41   ADCS R2, R2 */
-        emit(16); emit(0);                      /* 10 00   MOVS R0, R2 */
-    }
+    char *code = "\x40\x1a\x41\x42\x48\x41\x00\x00\x40\x1a\x41\x42\x88\x41\x00\x00\x81\x42\x80\x41\x40\x42\x00\x00\x00\x22\x81\x42\x52\x41\x10\x00\x88\x42\x80\x41\x40\x42\x00\x00\x00\x22\x88\x42\x52\x41\x10\x00";
+    unsigned len = 6;
+    if (op == 19) len = 8;
+    if (op == 21) len = 8;
+    emit_multi(len, code + (((op - 16) << 3)));
+
+        /* == */
+        /* 40 1A   SUBS R0, R0, R1 */
+        /* 41 42   RSBS R1, R0, #0 */
+        /* 48 41   ADCS R0, R1 */
+
+        /* != */
+        /* 40 1A   SUBS R0, R0, R1 */
+        /* 41 42   RSBS R1, R0, #0 */
+        /* 88 41   SBCS R0, R1 */
+
+        /* < */
+        /* 81 42   CMP R1, R0 */
+        /* 80 41   SBCS R0, R0 */
+        /* 40 42   RSBS R0, R0, #0 */
+
+        /* >= */
+        /* 00 22   MOVS R2, #0 */
+        /* 81 42   CMP R1, R0 */
+        /* 52 41   ADCS R2, R2 */
+        /* 10 00   MOVS R0, R2 */
+
+        /* > */
+        /* 88 42   CMP R0, R1 */
+        /* 80 41   SBCS R0, R0 */
+        /* 40 42   RSBS R0, R0, #0 */
+
+        /* <= */
+        /* 00 22   MOVS R2, #0 */
+        /* 88 42   CMP R0, R1 */
+        /* 52 41   ADCS R2, R2 */
+        /* 10 00   MOVS R0, R2 */
 }
 
 unsigned emit_branch_if0()
 {
-    emit(0); emit(40);                          /* 00 28   CMP R0, #0 */
-    emit(0); emit(209);                         /* 00 D1   BNE ... */
-    emit_jump(0 /* dont care */);
+    emit_multi(6, "\x00\x28\x00\xd1\x00\xe0");
+        /* 00 28   CMP R0, #0 */
+        /* 00 D1   BNE $+4 */
+        /* ?? E?   B ?          will be fixed later*/
     return code_pos - 2;
 }
 
@@ -366,13 +358,14 @@ unsigned emit_branch_if_cond(unsigned op)
     return emit_branch_if0();
 */
     stack_pos = stack_pos - 1;
-    emit(2); emit(188);                         /* 02 BC   POP {R1} */
-    emit(129); emit(66);                        /* 81 42   CMP R1, R0 */
-
-    char *bcc = "\xd1\xd0\xd2\xd3\xd9\xd8";
-    emit(0);
-    emit(bcc[(op ^ 1) - 16]);
-    emit_jump(0 /* dont care */);
+    emit_multi(5, "\x02\xbc\x81\x42\x00");
+        /* 02 BC   POP {R1} */
+        /* 81 42   CMP R1, R0 */
+        /* ?? D?   B?? $+4 */
+        /* ?? E?   B ?          will be fixed later */
+    char *bcc = "\xd0\xd1\xd3\xd2\xd8\xd9";
+    emit(bcc[op - 16]);
+    emit16(0); /* don't care */
     return code_pos - 2;
 }
 
@@ -402,14 +395,14 @@ unsigned emit_fix_call_here(unsigned pos)
 
 void emit_enter(unsigned n)
 {
-    emit(0); emit(181);                         /* 00 B5   PUSH {LR} */
+    emit16(46336);                              /* 00 B5   PUSH {LR} */
     num_params = n;
 }
 
 void emit_return()
 {
     emit_pop(stack_pos);
-    emit(0); emit(189);                         /* 00 BD   POP {PC} */
+    emit16(48384);                              /* 00 BD   POP {PC} */
     if (immpool_pos) empty_immpool();
 }
 
@@ -421,10 +414,7 @@ unsigned emit_local_var()
 
 unsigned emit_global_var()
 {
-    if (code_pos & 2) {
-        emit(0); emit(0);
-    }
-    emit32(0);
+    emit_multi(4 + (code_pos & 2), "\x00\x00\x00\x00\x00\x00");
     return code_pos + 65532; /* 0x10000 - 4 */
         /* global variables need the code offset */
 }
