@@ -84,7 +84,8 @@ void empty_immpool()
     if (code_pos > immpos_base + 1020) exit(200);
         /* too late to empty imm pool: imm pool to far away */
 
-    unsigned delta = 255 - ((code_pos - immpos_base) >> 2);
+    unsigned delta = 254 - ((code_pos - immpos_base) >> 2);
+       /* not 255 because it may be increased by optimisation */
 
     /* write pool data */
     unsigned i = 0;
@@ -115,12 +116,13 @@ void immpool_ref(unsigned ip)
 {
     if (immpos_pos == 0) {
         /* start collection for a new pool */
-        immpos_base = code_pos & 4294967292; /* ~3 */
+        immpos_base = (code_pos & 4294967292/*~3*/) - 4;
+            /* -4 because reference might be moved forward by optimisation */
     }
     unsigned cp = code_pos - immpos_base;
 
     emit(((immpos_base + ip - (code_pos & 4294967292/*~3*/))
-         >> 2) + 254);
+         >> 2) + 253);
 
     immpos[immpos_pos] = cp;
     immpos[immpos_pos + 1] = cp >> 8;
@@ -196,11 +198,11 @@ void access_var(unsigned global, unsigned ofs, unsigned store, unsigned index)
 {
     if (global) {
         e_imm(1, ofs);
-        emit(8 + index); emit(104 - store);     /* 09 68   LDR R1, [R1] */
+        emit(8 + index); emit(104 - store);
     }
     else {
         emit(stack_pos - ofs + num_params + 1);
-        emit(152 - store + index);              /* ?? 99   LDR R1, [SP, #ofs] */
+        emit(152 - store + index);
     }
 }
 
@@ -225,13 +227,6 @@ void emit_index(unsigned global, unsigned ofs)
        local    -- 99           LDR R1, [SP, #ofs] */
     emit16(17416);
     /*          08 44           ADD R0, R1 */
-}
-
-void emit_pop_store_array()
-{
-    stack_pos = stack_pos - 1;
-    emit16(48130);                              /* 02 BC   POP {R1} */
-    emit16(28680);                              /* 08 70   STRB R0, [R1] */
 }
 
 void emit_load_array()
@@ -275,59 +270,122 @@ void emit_call(unsigned defined, unsigned sym, unsigned ofs, unsigned pop,
     stack_pos = stack_pos - pop;
 }
 
-void emit_operation(unsigned op)
+/* move the ldr pc instruction 2 bytes forward and adjust immpool reference */
+void move_forward_immpool_load()
+{
+    /* correction because pc alignment to 4 changes */
+    emit(buf[code_pos + 2] + ((code_pos >> 1) & 1));
+    emit(73);                           /* ?? 49   LDR R1, [PC, #??] */
+
+    /* decrement position of immpool reference */ 
+    unsigned cp = (immpos[immpos_pos - 1] << 8) + immpos[immpos_pos - 2] - 2;
+    immpos[immpos_pos - 2] = cp;
+    immpos[immpos_pos - 1] = cp >> 8;
+}
+
+/* return 1 if R0 and R1 are swapped */
+unsigned swap_or_pop()
 {
     stack_pos = stack_pos - 1;
 
-    /* optimization for 8 bit immm */
-    if ((buf[code_pos - 1] == 32)               /* 20   MOVS R0, imm */
-        & (buf[code_pos - 3] == 180)            /* B4   PUSH {R0} */
-        & (buf[code_pos - 4] == 1))             /* 01 */
+    unsigned b2 = buf[code_pos - 2];
+    unsigned b1 = buf[code_pos - 1];
+
+    if ((buf[code_pos - 4] == 1)        /* 01 B4   PUSH {R0} */
+        & (buf[code_pos - 3] == 180))
     {
-        code_pos = code_pos - 4;
-        if (op < 3) { /* LSL or LSR */
-            emit16(  ((buf[code_pos + 2] & 31) << 6)
-                + ((op - 1) << 11));    /* LSLS/LSRS R0, R0, (imm & 31) */
-            return;
+        if (b1 == 32) {                 /* ?? 20   MOVS R0, imm */
+            code_pos = code_pos - 4;
+            emit(b2);                   /* ?? 21   MOVS R1, #?? */
+            emit(33);
+            return 1;
         }
-        emit(buf[code_pos + 2]);
-        if ((op == 3) | (op == 6)) {            /* SUBS or ADDS */
-            if (op == 3) emit(56);
-            else emit(48);
-            return;
+        if (b1 == 152) {                /* ?? 98   LDR R0, [SP, #??] */
+            code_pos = code_pos - 4;
+            emit(b2 - 1);               /* ?? 99   LDR R1, [SP, #??-1] */
+            emit(153);
+            return 1;
         }
-        emit(33);                               /* MOVS R1, imm */
-            /* remaining ops are commutative (R0+R1 = R1+R0) */
+        if (b1 == 72) {                 /* ?? 48   LDR R0, [PC, #??] */
+            code_pos = code_pos - 4;
+            move_forward_immpool_load();
+            return 1;
+        }
     }
-    else emit16(48130);                         /* 02 BC   POP {R1} */
+    if ((buf[code_pos - 6] == 1)        /* 01 B4   PUSH {R0} */
+        & (buf[code_pos - 5] == 180)
+        & (buf[code_pos - 3] == 73)
+        & (b2 == 8)
+        & (b1 == 104))
+    {
+        code_pos = code_pos - 6;
+        move_forward_immpool_load();
+        emit16(26633);                  /* 09 68   LDR R1, [R1] */
+        return 1;
+    }
+    emit16(48130);                      /* 02 BC   POP {R1} */
+    return 0;
+}
 
-    char *code = "\x00\x00\x00\x00\x81\x40\x08\x46\xc1\x40\x08\x46\x08\x1a\x00\x00\x08\x43\x00\x00\x48\x40\x00\x00\x08\x44\x00\x00\x08\x40\x00\x00\x48\x43\x00\x00";
-    unsigned len = 2;
-    if (op <= 2) len = 4;
-    emit_multi(len, code + (op << 2));
-        /* 81 40   LSLS R1, R0          <<*/
-        /* 08 46   MOV R0, R1 */
+void emit_pop_store_array()
+{
+    if (swap_or_pop()) emit16(28673);   /* 01 70   STRB R1, [R0] */
+                  else emit16(28680);   /* 08 70   STRB R0, [R1] */
+}
 
-        /* C1 40   LSRS R1, R0          >>*/
-        /* 08 46   MOV R0, R1 */
+void emit_operation(unsigned op)
+{
+    char *code1 = " \x81\xc1\x08\x08\x48\x08\x08\x48";
+    char *code2 = " \x40\x40\x1a\x43\x40\x44\x40\x43";
+    char *code3 = " \x88\xc8\x40\x08\x48\x08\x08\x48";
 
-        /* 08 1A   SUB R0, R1, R0       - */
+    if (swap_or_pop()) {
+        if (buf[code_pos - 1] == 33) {
+            /* optimization for 8 bit immm */
+            if (op < 3) { /* LSL or LSR */
+                code_pos = code_pos - 2;
+                emit16(((buf[code_pos + 2] & 31) << 6)
+                    + ((op - 1) << 11));    /* LSLS/LSRS R0, R0, (imm & 31) */
+                return;
+            }
+            if (op == 3) {
+                buf[code_pos - 1] = 56;         /* ?? 38   SUBS R0, imm */
+                return;
+            }
+            if (op == 6) {
+                buf[code_pos - 1] = 48;         /* ?? 30   ADDS R0. imm */
+                return;
+            }
+        }
+        /* emit alternate code for non-commutative ops */
+        emit(code3[op]);
+        emit(code2[op]);
+            /* 88 40   LSLS R0, R1          <<  op=1 */
+            /* C8 40   LSRS R0, R1          >>  op=2 */
+            /* 40 1A   SUBS R0, R0, R1      -   op=3 */
+            /* the remaining ops don't change because they are communtative
+               (R0 and R1 are interchangeable */
+    }
+    else {
+        emit(code1[op]);
+        emit(code2[op]);
+            /* 81 40   LSLS R1, R0          <<*/
+            /* C1 40   LSRS R1, R0          >>*/
+            /* 08 1A   SUBS R0, R1, R0      - */
+            /* 08 43   ORRS R0, R1          | */
+            /* 48 40   EORS R0, R1          ^ */
+            /* 08 44   ADD R0, R1           + */
+            /* 08 40   ANDS R0, R1          & */
+            /* 48 43   MULS R0, R1          * */
+            /* TODO: / and % */
 
-        /* 08 43   ORRS R0, R1          | */
-
-        /* 48 40   EORS R0, R1          ^ */
-
-        /* 08 44   ADD R0, R1           + */
-
-        /* 08 40   AND R0, R1           & */
-
-        /* 48 43   MULS R0, R1          * */
-
-        /* TODO: / and % */
+        if (op <= 2) emit16(17928);             /* 08 46   MOV R0, R1 */
+    }
 }
 
 void emit_comp(unsigned op)
 {
+    /* TODO: swap_or_pop() */
     stack_pos = stack_pos - 1;
     emit16(48130);                              /* 02 BC   POP {R1} */
 
@@ -385,15 +443,22 @@ unsigned emit_branch_if_cond(unsigned op)
     emit_comp(t);
     return emit_branch_if0();
 */
-    stack_pos = stack_pos - 1;
-    emit_multi(5, "\x02\xbc\x81\x42\x00");
-        /* 02 BC   POP {R1} */
-        /* 81 42   CMP R1, R0 */
-        /* ?? D?   B?? $+4 */
-        /* ?? E?   B ?          will be fixed later */
+    if (swap_or_pop()) {
+        if (buf[code_pos - 1] == 33) {
+            buf[code_pos - 1] = 40;             /* ?? 28   CMP R0, #imm */
+        }
+        else emit16(17032);                     /* 88 42   CMP R0, R1 */
+    }
+    else emit16(17025);                         /* 81 42   CMP R1, R0 */
+    emit(0);
+
+    /* branch over next instruction which is the real jump */
     char *bcc = "\xd0\xd1\xd3\xd2\xd8\xd9";
     emit(bcc[op - 16]);
-    emit16(0); /* don't care */
+    /* pure arithmetic alternative:
+        emit((((op >> 1) & 1) ^ op) + (op & 4) + 192);
+    */
+    emit16(0); /* don't care, will be fixed later to a jump */
     return code_pos - 2;
 }
 
