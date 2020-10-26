@@ -54,14 +54,14 @@ void emit32(unsigned n)
 
 void emit_push()
 {
-    emit16(46081);                         /* 01 B4   push {r0} */
+    emit16(46081);                      /* 01 B4   PUSH {R0} */
     stack_pos = stack_pos + 1;
 }
 
 void emit_pop(unsigned n)
 {
     if (n) {
-        emit(n); emit(176);                     /* nn B0   add sp, 4*n */
+        emit(n); emit(176);             /* nn B0   ADD SP, 4*n */
     }
 }
 
@@ -154,12 +154,12 @@ unsigned immpool_lookup(unsigned imm)
 void e_imm(unsigned reg, unsigned imm)
 {
     if (imm < 256) {
-        emit(imm); emit(reg + 32);              /* ?? 20   MOVS reg, imm */
+        emit(imm); emit(reg + 32);      /* ?? 20   MOVS reg, imm */
     }
     else {
         /* emit index in pool */
         immpool_ref(immpool_lookup(imm));
-        emit(reg + 72);                         /* ?? 48   LDR reg, [PC, #?] */
+        emit(reg + 72);                 /* ?? 48   LDR reg, [PC, #?] */
     }
     check_immpool();
 }
@@ -173,7 +173,7 @@ void emit_string(unsigned len, char *s)
 {
     /* emit index in pool */
     immpool_ref(immpool_pos);
-    emit(160);                                  /* ?? A0   ADD R0, [PC, #?] */
+    emit(160);                          /* ?? A0   ADD R0, [PC, #?] */
 
     /* write to pool */
     unsigned aligned = (len + 4) & 4294967292; /*~3*/
@@ -227,14 +227,14 @@ void emit_index(unsigned global, unsigned ofs)
 void emit_load_array()
 {
     /* optimisation */
-    if (buf[code_pos - 2] == 8)          /* 08 44   ADD R0, R1 */
+    if (buf[code_pos - 2] == 8)         /* 08 44   ADD R0, R1 */
         if (buf[code_pos - 1] == 68) {
             code_pos = code_pos - 2;
-            emit16(23616);               /* 40 5C   LDRB R0, [R0, R1] */
+            emit16(23616);              /* 40 5C   LDRB R0, [R0, R1] */
             return;
     }
 
-    emit16(30720);                       /* 00 78   LDRB R0, [R0] */
+    emit16(30720);                      /* 00 78   LDRB R0, [R0] */
 }
 
 unsigned emit_pre_call()
@@ -262,10 +262,10 @@ unsigned insn_bl(unsigned disp)
 void emit_call(unsigned defined, unsigned sym, unsigned ofs, unsigned pop,
                unsigned save)
 {
-    if (defined) {                              /* defined function */
+    if (defined) {                      /* already defined function */
         emit32(insn_bl(ofs - code_pos - 4));
     }
-    else {                                      /* undefined function */
+    else {                              /* undefined function */
         set_32bit(buf + sym, code_pos);
         emit32(ofs);
     }
@@ -282,7 +282,7 @@ void adjust_immpool_load()
 }
 
 /* optimise if there are only a few instructions between push and pop */
-/* return 1 if R0 and R1 are swapped */
+/* return 7 if R0 and R1 are swapped */
 unsigned swap_or_pop()
 {
     stack_pos = stack_pos - 1;
@@ -297,18 +297,18 @@ unsigned swap_or_pop()
             code_pos = code_pos - 4;
             emit(b2);                   /* ?? 21   MOVS R1, #?? */
             emit(33);
-            return 1;
+            return 7;
         }
         if (b1 == 152) {                /* ?? 98   LDR R0, [SP, #??] */
             code_pos = code_pos - 4;
             emit(b2 - 1);               /* ?? 99   LDR R1, [SP, #??-1] */
             emit(153);
-            return 1;
+            return 7;
         }
         if (b1 == 72) {                 /* ?? 48   LDR R0, [PC, #??] */
             code_pos = code_pos - 4;
             adjust_immpool_load();
-            return 1;
+            return 7;
         }
     }
     if ((buf[code_pos - 6] == 1)        /* 01 B4   PUSH {R0} */
@@ -320,7 +320,7 @@ unsigned swap_or_pop()
         code_pos = code_pos - 6;
         adjust_immpool_load();
         emit16(26633);                  /* 09 68   LDR R1, [R1] */
-        return 1;
+        return 7;
     }
     emit16(48130);                      /* 02 BC   POP {R1} */
     return 0;
@@ -328,8 +328,9 @@ unsigned swap_or_pop()
 
 void emit_pop_store_array()
 {
-    if (swap_or_pop()) emit16(28673);   /* 01 70   STRB R1, [R0] */
-                  else emit16(28680);   /* 08 70   STRB R0, [R1] */
+    emit16(28680 - swap_or_pop());
+    /* swap     emit16(28673);             01 70   STRB R1, [R0] */
+    /* no swap  emit16(28680);             08 70   STRB R0, [R1] */
 }
 
 void emit_operation(unsigned op)
@@ -348,11 +349,11 @@ void emit_operation(unsigned op)
                 return;
             }
             if (op == 3) {
-                buf[code_pos - 1] = 56;         /* ?? 38   SUBS R0, imm */
+                buf[code_pos - 1] = 56; /* ?? 38   SUBS R0, imm */
                 return;
             }
             if (op == 6) {
-                buf[code_pos - 1] = 48;         /* ?? 30   ADDS R0. imm */
+                buf[code_pos - 1] = 48; /* ?? 30   ADDS R0. imm */
                 return;
             }
         }
@@ -384,47 +385,38 @@ void emit_operation(unsigned op)
 
 void emit_comp(unsigned op)
 {
-    /* TODO: swap_or_pop() */
-    stack_pos = stack_pos - 1;
-    emit16(48130);                              /* 02 BC   POP {R1} */
+    unsigned swap = swap_or_pop();
+    if (op <= 17) {
+        if (buf[code_pos - 1] == 33) {  /* ?? 21   MOVS R1, #imm */
+            buf[code_pos - 1] = 56;     /* ?? 38   SUBS R0, #imm */
+        }
+        else emit16(6720);              /* 40 1A   SUBS R0, R0, R1 */
 
-    char *code = "\x40\x1a\x41\x42\x48\x41\x00\x00\x40\x1a\x41\x42\x88\x41\x00\x00\x81\x42\x80\x41\x40\x42\x00\x00\x00\x22\x81\x42\x52\x41\x10\x00\x88\x42\x80\x41\x40\x42\x00\x00\x00\x22\x88\x42\x52\x41\x10\x00";
-    unsigned len = 6;
-    if (op == 19) len = 8;
-    if (op == 21) len = 8;
-    emit_multi(len, code + (((op - 16) << 3)));
+        emit16(16961);                  /* 41 42   RSBS R1, R0, #0 */
+        emit16((op << 6) + 15688);
+            /* op=16  ==  emit16(16712);   48 41   ADCS R0, R1 */
+            /* op=17  !=  emit16(16776);   88 41   SBCS R0, R1 */
 
-        /* == */
-        /* 40 1A   SUBS R0, R0, R1 */
-        /* 41 42   RSBS R1, R0, #0 */
-        /* 48 41   ADCS R0, R1 */
+    }
+    else {
+        if (op <= 19) swap = swap ^ 7;
 
-        /* != */
-        /* 40 1A   SUBS R0, R0, R1 */
-        /* 41 42   RSBS R1, R0, #0 */
-        /* 88 41   SBCS R0, R1 */
+        swap = 17032 - swap;
+            /* no swap  emit16(17032);     88 42   CMP R0, R1 */
+            /* swap     emit16(17025);     81 42   CMP R1, R0 */
 
-        /* < */
-        /* 81 42   CMP R1, R0 */
-        /* 80 41   SBCS R0, R0 */
-        /* 40 42   RSBS R0, R0, #0 */
-
-        /* >= */
-        /* 00 22   MOVS R2, #0 */
-        /* 81 42   CMP R1, R0 */
-        /* 52 41   ADCS R2, R2 */
-        /* 10 00   MOVS R0, R2 */
-
-        /* > */
-        /* 88 42   CMP R0, R1 */
-        /* 80 41   SBCS R0, R0 */
-        /* 40 42   RSBS R0, R0, #0 */
-
-        /* <= */
-        /* 00 22   MOVS R2, #0 */
-        /* 88 42   CMP R0, R1 */
-        /* 52 41   ADCS R2, R2 */
-        /* 10 00   MOVS R0, R2 */
+        if (op & 1) {
+            emit16(8704);               /* 00 22   MOVS R2, #0 */
+            emit16(swap);
+            emit32(1065298);            /* 52 41   ADCS R2, R2 */
+                                        /* 10 00   MOVS R0, R2 */
+        }
+        else {
+            emit16(swap);
+            emit32(1111507328);         /* 80 41   SBCS R0, R0 */
+                                        /* 40 42   RSBS R0, R0, #0 */
+        }
+    }
 }
 
 unsigned emit_branch_if0()
@@ -444,11 +436,11 @@ unsigned emit_branch_if_cond(unsigned op)
 */
     if (swap_or_pop()) {
         if (buf[code_pos - 1] == 33) {
-            buf[code_pos - 1] = 40;             /* ?? 28   CMP R0, #imm */
+            buf[code_pos - 1] = 40;     /* ?? 28   CMP R0, #imm */
         }
-        else emit16(17032);                     /* 88 42   CMP R0, R1 */
+        else emit16(17032);             /* 88 42   CMP R0, R1 */
     }
-    else emit16(17025);                         /* 81 42   CMP R1, R0 */
+    else emit16(17025);                 /* 81 42   CMP R1, R0 */
     emit(0);
 
     /* branch over next instruction which is the real jump */
