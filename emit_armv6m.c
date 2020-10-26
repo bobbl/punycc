@@ -84,8 +84,7 @@ void empty_immpool()
     if (code_pos > immpos_base + 1020) exit(200);
         /* too late to empty imm pool: imm pool to far away */
 
-    unsigned delta = 254 - ((code_pos - immpos_base) >> 2);
-       /* not 255 because it may be increased by optimisation */
+    unsigned code_base = code_pos >> 2;
 
     /* write pool data */
     unsigned i = 0;
@@ -98,7 +97,7 @@ void empty_immpool()
     i = 0;
     while (i < immpos_pos) {
         unsigned pos = immpos_base + immpos[i] + (immpos[i + 1] << 8);
-        buf[pos] = buf[pos] - delta;
+        buf[pos] = buf[pos] + code_base - (pos >> 2) - 1;
         i = i + 2;
     }
 
@@ -116,17 +115,13 @@ void immpool_ref(unsigned ip)
 {
     if (immpos_pos == 0) {
         /* start collection for a new pool */
-        immpos_base = (code_pos & 4294967292/*~3*/) - 4;
-            /* -4 because reference might be moved forward by optimisation */
+        immpos_base = code_pos & 4294967292/*~3*/;
     }
     unsigned cp = code_pos - immpos_base;
-
-    emit(((immpos_base + ip - (code_pos & 4294967292/*~3*/))
-         >> 2) + 253);
-
     immpos[immpos_pos] = cp;
     immpos[immpos_pos + 1] = cp >> 8;
     immpos_pos = immpos_pos + 2;
+    emit(ip >> 2);
 }
 
 void check_immpool()
@@ -231,7 +226,15 @@ void emit_index(unsigned global, unsigned ofs)
 
 void emit_load_array()
 {
-    emit16(30720);                              /* 00 78   LDRB R0, [R0] */
+    /* optimisation */
+    if (buf[code_pos - 2] == 8)          /* 08 44   ADD R0, R1 */
+        if (buf[code_pos - 1] == 68) {
+            code_pos = code_pos - 2;
+            emit16(23616);               /* 40 5C   LDRB R0, [R0, R1] */
+            return;
+    }
+
+    emit16(30720);                       /* 00 78   LDRB R0, [R0] */
 }
 
 unsigned emit_pre_call()
@@ -271,18 +274,14 @@ void emit_call(unsigned defined, unsigned sym, unsigned ofs, unsigned pop,
 }
 
 /* move the ldr pc instruction 2 bytes forward and adjust immpool reference */
-void move_forward_immpool_load()
+void adjust_immpool_load()
 {
-    /* correction because pc alignment to 4 changes */
-    emit(buf[code_pos + 2] + ((code_pos >> 1) & 1));
-    emit(73);                           /* ?? 49   LDR R1, [PC, #??] */
-
-    /* decrement position of immpool reference */ 
-    unsigned cp = (immpos[immpos_pos - 1] << 8) + immpos[immpos_pos - 2] - 2;
-    immpos[immpos_pos - 2] = cp;
-    immpos[immpos_pos - 1] = cp >> 8;
+    immpos_pos = immpos_pos - 2;
+    immpool_ref(buf[code_pos + 2] << 2);
+    emit(73);
 }
 
+/* optimise if there are only a few instructions between push and pop */
 /* return 1 if R0 and R1 are swapped */
 unsigned swap_or_pop()
 {
@@ -308,7 +307,7 @@ unsigned swap_or_pop()
         }
         if (b1 == 72) {                 /* ?? 48   LDR R0, [PC, #??] */
             code_pos = code_pos - 4;
-            move_forward_immpool_load();
+            adjust_immpool_load();
             return 1;
         }
     }
@@ -319,7 +318,7 @@ unsigned swap_or_pop()
         & (b1 == 104))
     {
         code_pos = code_pos - 6;
-        move_forward_immpool_load();
+        adjust_immpool_load();
         emit16(26633);                  /* 09 68   LDR R1, [R1] */
         return 1;
     }
