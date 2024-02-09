@@ -212,16 +212,10 @@ void emit_arg(unsigned i)
     reg_pos = reg_pos + 1;
 }
 
-void emit_call(unsigned defined, unsigned sym, unsigned ofs, unsigned pop,
-               unsigned save)
+unsigned emit_call(unsigned ofs, unsigned pop, unsigned save)
 {
-    if (defined) {                              /* defined function */
-        emit32(insn_jal(1, ofs - code_pos));
-    }
-    else {                                      /* undefined function */
-        set_32bit(buf + sym, code_pos);
-        emit32(ofs);
-    }
+    unsigned r = code_pos;
+    emit32(insn_jal(1, ofs - code_pos));
     reg_pos = save;
 
     if (reg_pos != 0) {
@@ -236,13 +230,12 @@ void emit_call(unsigned defined, unsigned sym, unsigned ofs, unsigned pop,
         emit_insn_addsp(reg_pos);
         stack_pos = stack_pos - reg_pos;
     }
+    return r;
 }
 
-unsigned emit_fix_call_here(unsigned pos)
+unsigned emit_fix_call(unsigned from, unsigned to)
 {
-    unsigned next = get_32bit(buf + pos);
-    set_32bit(buf + pos, insn_jal(1, code_pos - pos));
-    return next;
+    return insn_jal(1, to - from);
 }
 
 void emit_operation(unsigned t)
@@ -370,8 +363,9 @@ unsigned emit_jump(unsigned destination)
     return code_pos - 4;
 }
 
-void emit_enter(unsigned n)
+unsigned emit_enter(unsigned n)
 {
+    unsigned r = code_pos;
     reg_pos = 0;
     stack_pos = 0;
     num_params = n;
@@ -383,6 +377,7 @@ void emit_enter(unsigned n)
         emit_insn_sw(i + 10, 2, (i + 1) << 2);
         i = i + 1;
     }
+    return r;
 }
 
 void emit_return()
@@ -470,4 +465,51 @@ void emit_end()
 
     set_32bit(buf + 68, code_pos);
     set_32bit(buf + 72, code_pos);
+}
+
+
+
+
+/* Wrapper code for new emit interface: */
+
+
+unsigned emit_binary_func(unsigned n, char *s)
+{
+    unsigned r = code_pos;
+    emit_multi(n, s);
+    return r;
+}
+
+unsigned emit_pre_while()
+{
+    return code_pos;
+}
+
+void emit_index_push(unsigned global, unsigned ofs)
+{
+    emit_index(global, ofs);
+    emit_push();
+}
+
+void emit_index_load_array(unsigned global, unsigned ofs)
+{
+    emit_index(global, ofs);
+    emit_load_array();
+}
+
+unsigned emit_jump_and_fix_branch_here(unsigned destination, unsigned insn_pos)
+{
+    unsigned jump_pos = emit_jump(destination);
+    emit_fix_branch_here(insn_pos);
+    return jump_pos;
+}
+
+unsigned emit_if(unsigned condition)
+{
+    if (condition) {
+        return emit_branch_if_cond(condition);
+    }
+    else {
+        return emit_branch_if0();
+    }
 }

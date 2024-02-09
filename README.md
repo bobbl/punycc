@@ -75,7 +75,7 @@ To build punycc for all target architectures use
 
     ./make.sh clang
 
-The executables are named `build/punycc_ARCH.clang`. They
+The executables are named `build/punycc_ARCH.clang`.
 They read C source code from stdin and write an executable to stdout:
 
     ./punycc_x86.clang < foo.c > foo.x86
@@ -111,8 +111,13 @@ Each compiler consists of three parts:
  2. Target-specific code generation in `emit_ARCH.C`
  3. Architecture independent compiler parts (scanner, parser and symbol table)
 
-Concatenate the three files and compile it.
-Cross compilers can be built by using a different `ARCH` for `host_` and `emit_`.
+Concatenate the three files and compile it, for example
+
+    cat host_x86.c emit_x86.c punycc.c | ./punycc_x86.clang
+
+Cross compilers can be built by using a different `ARCH` for `host_` and `emit_`:
+
+    cat host_x86.c emit_armv6m._c punycc.c | ./punycc_x86.clang
 
 
 ### Memory Management
@@ -129,5 +134,21 @@ space between them:
     +------+---------------+-------------------+---------------+--------------+
 
 
+### Symbol Table
+
+The symbol table starts at sym_head at ends at the end of the buffer. It is the
+concatination of symbol entries with the following format:
+
+| offset | size    | description             |
+| ------:| -------:| ----------------------- |
+|     0  | 4 bytes | address (little endian) |
+|     4  | 1 byte  | symbol type             |
+|     5  | 1 byte  | n: length of name       |
+|     6  | n bytes | name                    |
 
 
+### Code Generation
+
+The functions prefixed by `emit_` are used to generate the machine code. The
+template in [emit_template.c](emit_template.c) documents all functions and can be used as
+starting point for a new architecture backend.

@@ -160,19 +160,14 @@ void emit_arg(unsigned i)
     emit_push();
 }
 
-void emit_call(unsigned defined, unsigned sym, unsigned ofs, unsigned pop,
-               unsigned save)
+unsigned emit_call(unsigned ofs, unsigned pop, unsigned save)
 {
     emit(232);                                  /* E8        call */
-    if (defined) {                              /* defined function */
-        emit32(ofs - code_pos - 4);
-    }
-    else {                                      /* undefined function */
-        set_32bit(buf + sym, code_pos);
-        emit32(ofs);
-    }
+    unsigned r = code_pos;
+    emit32(ofs - code_pos - 4);
     emit_pop(pop);
     stack_pos = stack_pos - pop;
+    return r;
 }
 
 void emit_operation(unsigned op)
@@ -252,11 +247,9 @@ void emit_fix_jump_here(unsigned insn_pos)
     emit_fix_branch_here(insn_pos);
 }
 
-unsigned emit_fix_call_here(unsigned pos)
+unsigned emit_fix_call(unsigned from, unsigned to)
 {
-    unsigned next = get_32bit(buf + pos);
-    set_32bit(buf + pos, code_pos - pos - 4);
-    return next;
+    return to - from - 4;
 }
 
 unsigned emit_jump(unsigned destination)
@@ -266,9 +259,10 @@ unsigned emit_jump(unsigned destination)
     return code_pos - 4;
 }
 
-void emit_enter(unsigned n)
+unsigned emit_enter(unsigned n)
 {
     num_params = n;
+    return code_pos;
 }
 
 void emit_return()
@@ -340,4 +334,51 @@ void emit_end()
 {
     set_32bit(buf + 68, code_pos);
     set_32bit(buf + 72, code_pos);
+}
+
+
+
+
+/* Wrapper code for new emit interface: */
+
+
+unsigned emit_binary_func(unsigned n, char *s)
+{
+    unsigned r = code_pos;
+    emit_multi(n, s);
+    return r;
+}
+
+unsigned emit_pre_while()
+{
+    return code_pos;
+}
+
+void emit_index_push(unsigned global, unsigned ofs)
+{
+    emit_index(global, ofs);
+    emit_push();
+}
+
+void emit_index_load_array(unsigned global, unsigned ofs)
+{
+    emit_index(global, ofs);
+    emit_load_array();
+}
+
+unsigned emit_jump_and_fix_branch_here(unsigned destination, unsigned insn_pos)
+{
+    unsigned jump_pos = emit_jump(destination);
+    emit_fix_branch_here(insn_pos);
+    return jump_pos;
+}
+
+unsigned emit_if(unsigned condition)
+{
+    if (condition) {
+        return emit_branch_if_cond(condition);
+    }
+    else {
+        return emit_branch_if0();
+    }
 }
