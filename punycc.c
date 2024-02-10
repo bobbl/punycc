@@ -75,10 +75,11 @@ unsigned token;
 unsigned token_int;
 unsigned token_size;
 char *token_buf;
+unsigned syms_head;
 
 void itoa4(unsigned x)
 {
-    char *s = (char *)buf + code_pos;
+    char *s = (char *)buf + syms_head - 16;
     x = x * 134218; /* x = x * (((1<<27)/1000) + 1) */
     s[0] = (x>>27) + '0';
     x = (x & 134217727) * 5;  /* 0x07FFFFFF */
@@ -259,6 +260,7 @@ void get_token()
 /**********************************************************************
  * Symbol Management
  **********************************************************************/
+
 
 unsigned sym_lookup()
 {
@@ -583,16 +585,19 @@ void parse_function(unsigned sym)
     syms_head = restore_head;
 }
 
-
 /* global  = type , identifier , ";" ;
  * program = { global | function } ;
  */
 void parse_program()
 {
-    while (token != 0) {
+    while (token) {
         expect_type();
         unsigned sym = sym_lookup();
-        if (sym == 0) { /* unknown identifier */
+        if (sym) { 
+            get_token();
+            parse_function(sym);
+        }
+        else { /* unknown identifier */
             sym_append(0, 72); /* undefined function */
             if (accept(';')) {
                 set_32bit(buf + syms_head, emit_global_var());
@@ -602,10 +607,6 @@ void parse_program()
                 parse_function(syms_head);
             }
         }
-        else {
-            get_token();
-            parse_function(sym);
-        }
     }
 }
 
@@ -613,7 +614,6 @@ int main()
 {
     buf_size  = 65536;
     buf       = malloc(buf_size);
-    code_pos  = 0;
     syms_head = buf_size;
     lineno    = 1;
 
@@ -622,8 +622,7 @@ int main()
     token_buf = "main";
     sym_append(emit_begin(), 72); /* implicit get_token() */
     parse_program();
-    emit_end();
-    write(1, (char *)buf, code_pos);
+    write(1, (char *)buf, emit_end());
 
     return 0;
 }

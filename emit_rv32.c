@@ -8,7 +8,6 @@ unsigned buf_size;
 /* global variables */
 unsigned char *buf;
 unsigned code_pos;
-unsigned syms_head;
 unsigned stack_pos;
 unsigned num_params;
 unsigned reg_pos;
@@ -405,6 +404,7 @@ unsigned emit_global_var()
 
 unsigned emit_begin()
 {
+    code_pos = 0;
     stack_pos = 0;
     global_pos = 0;
     emit_multi(104, "\x7f\x45\x4c\x46\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\xf3\x00\x01\x00\x00\x00\x54\x00\x01\x00\x34\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x34\x00\x20\x00\x01\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x01\x00........\x07\x00\x00\x00\x00\x10\x00\x00\x13\x00\x00\x00\x13\x00\x00\x00\x00\x00\x00\x00\x93\x68\xd0\x05\x73\x00\x00\x00");
@@ -450,7 +450,7 @@ _start:
         /* return the address of the call to main() as a forward reference */
 }
 
-void emit_end()
+unsigned emit_end()
 {
     unsigned addr = code_pos + 1964; /* 2048 - 84 */
     set_32bit(buf + 84, 407 + (((addr + 2048) >> 12) << 12));
@@ -465,6 +465,7 @@ void emit_end()
 
     set_32bit(buf + 68, code_pos);
     set_32bit(buf + 72, code_pos);
+    return code_pos;
 }
 
 

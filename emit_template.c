@@ -265,6 +265,6 @@ void emit_scope_end(unsigned stack_pos);
 unsigned emit_begin();
 
 
-/* Finish code generation and write binary to stdout */
-void emit_end();
+/* Finish code generation and return the size of the compiled binary */
+unsigned emit_end();
 
