@@ -6,7 +6,7 @@ Puny C
 Very small cross compiler for a subset of C.
 
 Features
-  * Supported target and host architectures: **RISC-V**, **ARM-Thumb** and **x86**.
+  * Supported target and host architectures: **RISC-V**, **ARM-Thumb-2** and **x86**.
   * Valid source code for Puny C is also valid C99 and can be written in a way
     that gcc or clang compile it without any warning.
   * Code generation is designed to be easily portable to other target
@@ -113,11 +113,11 @@ Each compiler consists of three parts:
 
 Concatenate the three files and compile it, for example
 
-    cat host_x86.c emit_x86.c punycc.c | ./punycc_x86.clang
+    cat host_x86.c emit_x86.c punycc.c | ./punycc_x86.clang > punycc_x86.x86
 
 Cross compilers can be built by using a different `ARCH` for `host_` and `emit_`:
 
-    cat host_x86.c emit_armv6m._c punycc.c | ./punycc_x86.clang
+    cat host_x86.c emit_armv6m._c punycc.c | ./punycc_x86.clang > punycc_armv6m.x86
 
 
 ### Memory Management
