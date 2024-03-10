@@ -253,11 +253,10 @@ void emit_string(unsigned len, char *s)
 
     /* write to pool */
     unsigned aligned = (len + 4) & 4294967292; /*~3*/
+        /* there are 4 zero bytes appended to s */
     unsigned i = 0;
     while (i < aligned) {
-        unsigned b = 0;
-        if (i < len) b = s[i];
-        immpool[immpool_pos + i] = b;
+        immpool[immpool_pos + i] = s[i];
         i = i + 1;
     }
     immpool_pos = immpool_pos + aligned;

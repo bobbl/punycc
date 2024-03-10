@@ -365,6 +365,8 @@ void parse_factor()
         get_token();
     }
     else if (token == '"') { /* string */
+        set_32bit((unsigned char *)token_buf + token_int, 0);
+            /* append 4 zero bytes to simplify alignment in the backends */
         emit_string(token_int, token_buf);
         get_token();
     }

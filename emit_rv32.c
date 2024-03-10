@@ -129,11 +129,11 @@ void emit_number(unsigned imm)
 
 void emit_string(unsigned len, char *s)
 {
-    emit32(insn_jal(reg_pos, (len + 8) & 4294967292));
+    unsigned aligned_len = (len + 4) & 4294967292;
+        /* there are 4 zero bytes appended to s */
+    emit32(insn_jal(reg_pos, aligned_len + 4));
         /* JAL REG[reg_pos], align(end_of_string) */
-    emit_binary_func(len, s);
-    emit_binary_func(4 - (len & 3), "\x00\x00\x00\x00");
-        /* at least one 0 as end mark and then align */
+    emit_binary_func(aligned_len, s);
 }
 
 void emit_store(unsigned global, unsigned ofs)

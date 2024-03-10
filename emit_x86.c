@@ -97,8 +97,7 @@ void emit_string(unsigned len, char *s)
 {
     emit(232);                                  /* E8        call $+i */
     emit32(len + 1);
-    emit_binary_func(len, s);
-    emit(0);                                    /* 00        end of string mark */
+    emit_binary_func(len + 1, s);               /* 00        end of string mark */
     emit(88);                                   /* 58        pop eax */
 }
 

@@ -77,7 +77,8 @@ void emit_push();
 void emit_number(unsigned x);
 
 
-/* store string somewhere in the binary and set accumulator to its address */
+/* Store string somewhere in the binary and set accumulator to its address.
+   To simplify alignment, 4 zero bytes are following after the end of s. */
 void emit_string(unsigned len, char *s);
 
 
