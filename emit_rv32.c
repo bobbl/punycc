@@ -33,9 +33,25 @@ unsigned last_branch_target;
        Used to determine the length of the last uninterrupted sequences of
        instructions. */
 
-void set_32bit(unsigned char *p, unsigned x);
-unsigned get_32bit(unsigned char *p);
 
+
+/* helper to write a 32 bit number to a char array */
+void set_32bit(unsigned char *p, unsigned x)
+{
+    p[0] = x;
+    p[1] = x >> 8;
+    p[2] = x >> 16;
+    p[3] = x >> 24;
+}
+
+/* helper to read 32 bit number from a char array */
+unsigned get_32bit(unsigned char *p)
+{
+    return p[0] +
+          (p[1] << 8) +
+          (p[2] << 16) +
+          (p[3] << 24);
+}
 
 
 unsigned emit_binary_func(unsigned n, char *s)
@@ -53,16 +69,9 @@ unsigned emit_binary_func(unsigned n, char *s)
 void emit32(unsigned n)
 {
     unsigned cp = code_pos;
-    unsigned char *p = buf + cp;
     code_pos = cp + 4;
     last_insn = n;
-    p[0] = n;
-    p[1] = n >> 8;
-    p[2] = n >> 16;
-    p[3] = n >> 24;
-/*
     set_32bit(buf + cp, n);
-*/
 }
 
 void emit_isdo(unsigned imm, unsigned rs, unsigned rd, unsigned opcode)
