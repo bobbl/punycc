@@ -480,13 +480,6 @@ unsigned emit_global_var()
         /* global variables need the code offset */
 }
 
-unsigned emit_enter(unsigned n)
-{
-    emit16(46336);                              /* 00 B5   PUSH {LR} */
-    num_params = n;
-    return code_pos - 2;
-}
-
 void emit_return()
 {
     emit_pop(stack_pos);
@@ -503,6 +496,18 @@ unsigned emit_binary_func(unsigned n, char *s)
         i = i + 1;
     }
     return r;
+}
+
+unsigned emit_func_begin(unsigned n)
+{
+    emit16(46336);                              /* 00 B5   PUSH {LR} */
+    num_params = n;
+    return code_pos - 2;
+}
+
+void emit_func_end()
+{
+    emit_return();
 }
 
 unsigned emit_scope_begin()

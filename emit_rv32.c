@@ -387,7 +387,7 @@ unsigned emit_global_var()
     return num_globals - 513;
 }
 
-unsigned emit_enter(unsigned n)
+unsigned emit_func_begin(unsigned n)
 {
     function_start_pos = code_pos;
     reg_pos = 10;
@@ -425,8 +425,7 @@ void restore_sp()
     addsp_list = code_pos - 4;
 }
 
-
-void func_leave()
+void emit_return()
 {
     unsigned prev_insn = get_32bit(buf + code_pos - 4);
 
@@ -454,20 +453,6 @@ void func_leave()
     restore_sp();
     emit32(32871);          /* 00008067  RET */
 }
-
-
-void emit_return()
-{
-    if (num_scope) func_leave();
-}
-
-unsigned emit_scope_begin()
-{
-    num_scope = num_scope + 1;
-    return num_locals;
-}
-
-
 
 void refactor(unsigned start_pos, unsigned end_pos)
 {
@@ -550,7 +535,6 @@ void refactor(unsigned start_pos, unsigned end_pos)
     }
 }
 
-
 void walk_through(unsigned start_pos, unsigned end_pos)
 {
     unsigned branch_pos = start_pos;
@@ -602,35 +586,40 @@ void walk_through(unsigned start_pos, unsigned end_pos)
     refactor(start_pos, end_pos);
 }
 
+void emit_func_end()
+{
+    emit_return();
 
+    if ((num_calls == 0) & (max_reg_pos + num_locals < 32)) {
+        unsigned function_end_pos = code_pos;
+        code_pos = function_start_pos;
+        walk_through(function_start_pos + 8, function_end_pos);
+    }
+    else {
+        set_32bit(buf + function_start_pos, 4290838803 - (max_locals << 22));
+            /* FFC10113  ADD SP, SP, -4*(max_locals+1) */
+
+        unsigned insn = (max_locals << 22) + 4260115;
+            /* 00010113  ADD SP, SP, 4*(max_locals+1) */
+        unsigned next = addsp_list;
+        while (next) {
+            unsigned char *p = buf + next;
+            next = get_32bit(p);
+            set_32bit(p, insn);
+        }
+    }
+}
+
+unsigned emit_scope_begin()
+{
+    num_scope = num_scope + 1;
+    return num_locals;
+}
 
 void emit_scope_end(unsigned save)
 {
     num_locals = save;
     num_scope = num_scope - 1;
-    if (num_scope == 0) {
-
-        func_leave();
-
-        if ((num_calls == 0) & (max_reg_pos + num_locals < 32)) {
-            unsigned function_end_pos = code_pos;
-            code_pos = function_start_pos;
-            walk_through(function_start_pos + 8, function_end_pos);
-        }
-        else {
-            set_32bit(buf + function_start_pos, 4290838803 - (max_locals << 22));
-                /* FFC10113  ADD SP, SP, -4*(max_locals+1) */
-
-            unsigned insn = (max_locals << 22) + 4260115;
-                /* 00010113  ADD SP, SP, 4*(max_locals+1) */
-            unsigned next = addsp_list;
-            while (next) {
-                unsigned char *p = buf + next;
-                next = get_32bit(p);
-                set_32bit(p, insn);
-            }
-        }
-    }
 }
 
 unsigned emit_begin()

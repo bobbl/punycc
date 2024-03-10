@@ -553,9 +553,9 @@ void parse_function(unsigned sym)
         expect(';');
     }
     else if (accept(';') == 0) {
-        sym_fix(sym, emit_enter(n));
+        sym_fix(sym, emit_func_begin(n));
         parse_statement();
-        emit_return();
+        emit_func_end();
     }
     syms_head = restore_head;
 }

@@ -260,14 +260,8 @@ unsigned emit_global_var();
  **********************************************************************/
 
 
-/* Emit code at the beginning of a function.
-   The parameter is the number of arguments for the function.
-   The return value is the address of the function entry point. */
-unsigned emit_enter(unsigned n);
-
-
 /* Exit from the current function and return the value of the accumulator to
-   the caller. Called on explicit return statements and at the end of a
+   the caller. Only called on explicit return statements, not at the end of a
    function. */
 void emit_return();
 
@@ -275,6 +269,21 @@ void emit_return();
 /* Emit a function that consisits of the given binary machine code.
    The parameters are length and pointer to the machine code. */
 void emit_binary_func(unsigned n, char *s);
+
+
+/* Emit code at the beginning of a function.
+   The parameter is the number of arguments for the function.
+   The return value is the address of the function entry point. */
+unsigned emit_func_begin(unsigned n);
+
+
+/* Emit code at the end of a function.
+   Typically simply emit_return() is called here. */
+void emit_func_end();
+{
+    emit_return();
+}
+
 
 
 /* Called at the beginning of a scope (`{`).

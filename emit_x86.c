@@ -318,16 +318,21 @@ unsigned emit_global_var()
         /* global variables need the code offset */
 }
 
-unsigned emit_enter(unsigned n)
+void emit_return()
+{
+    emit_pop(stack_pos);
+    emit(195);                                  /* C3        ret */
+}
+
+unsigned emit_func_begin(unsigned n)
 {
     num_params = n;
     return code_pos;
 }
 
-void emit_return()
+void emit_func_end()
 {
-    emit_pop(stack_pos);
-    emit(195);                                  /* C3        ret */
+    emit_return();
 }
 
 unsigned emit_scope_begin()
