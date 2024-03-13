@@ -7,6 +7,7 @@ help () {
     echo "  x86         Set ISA to Intel x86 32 bit (default)"
     echo "  rv32        Set ISA to RISC-V RV32IM"
     echo "  armv6m      Set ISA to ARMv6-M (minimal thumb ISA of Cortex-M0)"
+    echo "  wasm        Set ISA to WebAssembly"
     echo
     echo "  clang       Use clang to build cross compiler for current ISA (host x86)"
     echo "  gcc         Use gcc to build cross compiler for current ISA (host x86)"
@@ -70,7 +71,7 @@ test_self () {
         echo "Error $errorlevel"
         exit $errorlevel
     fi
-    chmod 775 punycc_$arch.$arch
+    chmod +x punycc_$arch.$arch
     echo $arch compiler size: $(wc -c < punycc_$arch.$arch)
 }
 
@@ -87,7 +88,7 @@ test_tox86 () {
         echo "Error $errorlevel"
         exit $errorlevel
     fi
-    chmod 775 punycc_tox86.$arch
+    chmod +x punycc_tox86.$arch
     echo cross compiler $arch to x86 size: $(wc -c < punycc_tox86.$arch)
 }
 
@@ -100,7 +101,7 @@ test_cc500 () {
     echo "-------------------------------------------------------------"
 
     # use the compiled (modified) original to compile the original
-    chmod 775 cc500_mod.x86
+    chmod +x cc500_mod.x86
     ./cc500_mod.x86 < ../cc500/cc500.c > cc500.cc500
     cmp cc500.cc500 ../cc500/cc500.correct.x86
     echo original size: $(wc -c < cc500_mod.x86) instead of 16458
@@ -133,7 +134,8 @@ all () {
         for target in $arch_list
         do
             cat ../host_$host.c ../emit_$target.c ../punycc.c > punycc_$target.$host.c
-            $(qemu) ./punycc_$host.gcc < punycc_$target.$host.c > punycc_$target.$host
+            ./punycc_$host.gcc < punycc_$target.$host.c > punycc_$target.$host
+            chmod +x punycc_$target.$host
         done
     done
 }
