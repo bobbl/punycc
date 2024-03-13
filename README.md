@@ -1,12 +1,13 @@
-Puny C
-======
+Puny C Compiler
+===============
 
 > *Limited expressiveness unlimited portability*
 
 Very small cross compiler for a subset of C.
 
 Features
-  * Supported target and host architectures: **RISC-V**, **ARM-Thumb-2** and **x86**.
+  * Supported target and host architectures: **WebAssembly**, **RISC-V RV32IM**, **ARMv6-M (Thumb-2)**
+    and **x86-32**.
   * Valid source code for Puny C is also valid C99 and can be written in a way
     that gcc or clang compile it without any warning.
   * Code generation is designed to be easily portable to other target

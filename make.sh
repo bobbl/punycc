@@ -37,7 +37,7 @@ fi
 QEMU_RV32=${QEMU_RV32:-qemu-riscv32}
 QEMU_ARM=${QEMU_ARM:-qemu-arm}
 
-arch_list="armv6m	rv32	x86"
+arch_list="armv6m	rv32	x86	wasm"
 
 
 
@@ -46,6 +46,7 @@ qemu () {
         x86)    ;;
         rv32)   echo "$QEMU_RV32" ;;
         armv6m) echo "$QEMU_ARM" ;;
+        wasm)   echo "wasmtime" ;;
     esac
 }
 
@@ -170,6 +171,7 @@ do
         x86)            arch="x86" ;;
         rv32)           arch="rv32" ;;
         armv6m)         arch="armv6m" ;;
+        wasm)           arch="wasm" ;;
 
         clang)          compile clang ;;
         gcc)            compile gcc ;;
