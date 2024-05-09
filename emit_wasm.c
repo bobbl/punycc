@@ -97,7 +97,6 @@ void emit(unsigned b)
     buf[code_pos] = b;
     code_pos = code_pos + 1;
     last_insn = 0;
-
 }
 
 
@@ -115,7 +114,7 @@ void emit32(unsigned n)
 {
     code_pos = code_pos + 4;
     set_32bit(buf + code_pos - 4, n);
-
+    last_insn = 0;
 }
 
 void emit_leb(unsigned n)
@@ -419,7 +418,7 @@ void emit_return()
                 code_pos = code_pos - 1;
             }
             else {
-                emit(65); emit(127);                /* 41 00        i32.const 127 */
+                emit(65); emit(42);                 /* 41 2A        i32.const 42 */
             }
             stack_pos = 1;
         }

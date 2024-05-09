@@ -14,6 +14,7 @@ help () {
     echo "  test_self   Build compiler for ISA"
     echo "  test_tox86  Use ISA compiler to build cross compiler from ISA to x86"
     echo "  test_cc500  Compile cc500 with cross compiler and check against original"
+    echo "  test_all    Build 3 compilers for every arch: self, tox86 and cc500"
     echo
     echo "  all         Compile all targets with gcc, then all cross combinations"
     echo "  stats       Binary sizes of all self-compiled cross compilers"
@@ -38,7 +39,7 @@ fi
 QEMU_RV32=${QEMU_RV32:-qemu-riscv32}
 QEMU_ARM=${QEMU_ARM:-qemu-arm}
 
-arch_list="armv6m	rv32	x86	wasm"
+arch_list="x86	wasm	armv6m	rv32"
 
 
 
