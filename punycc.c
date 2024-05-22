@@ -346,18 +346,18 @@ void parse_expression();
  */
 void parse_factor()
 {
-    if (token == '(') { /* '(' */
-        while (token == '(') {
-            get_token();
-            if (accept_type()) { /* ignore type cast */
-                expect(')');
-            }
-            else { /* expression in brackets */
-                parse_expression();
-                expect(')');
-                return;
-            }
+    while (token == '(') { /* '(' */
+        get_token();
+
+        /* expression in brackets */
+        if (accept_type() == 0) {
+            parse_expression();
+            expect(')');
+            return;
         }
+
+        /* ignore type cast */
+        expect(')');
     }
 
     if (token == '^') { /* number */

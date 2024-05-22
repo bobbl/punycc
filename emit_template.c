@@ -233,11 +233,17 @@ void emit_arg(unsigned i);
 /* Call the function at address `ofs`.
    Then remove `pop` values from the stack.
    `save` is the return value from the corresponding emit_pre_call(). It can be
-   used to restore the registers that were saved by emit_pre_call(). */
+   used to restore the registers that were saved by emit_pre_call().
+   Return the address of the call instruction. It must be at least 4 bytes long,
+   because it might be overwritten by a pointer if the address of the function
+   is not yet known. emit_fix_call() will overwrite this pointer later */
 unsigned emit_call(unsigned ofs, unsigned pop, unsigned save);
 
 
-unsigned emit_fix_call(unsigned pos);
+/* Write a call instruction at the address from. The target address of the call
+   is to. This is used to fix a prevoiusly emit_call() where 4 bytes are
+   reserved for this call. */
+unsigned emit_fix_call(unsigned from, unsigned to);
 
 
 

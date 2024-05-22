@@ -11,7 +11,10 @@ unsigned code_pos;
 unsigned stack_pos;
 unsigned num_params;
 
-
+unsigned insn_history1;
+unsigned last_push_code_pos;
+unsigned last_load_global;
+unsigned last_load_ofs;
 
 /* helper to write a 32 bit number to a char array */
 void set_32bit(unsigned char *p, unsigned x)
@@ -35,6 +38,7 @@ void emit(unsigned b)
 {
     buf[code_pos] = b;
     code_pos = code_pos + 1;
+    insn_history1 = 0;
 }
 
 void emiti(char *s, unsigned i)
@@ -63,6 +67,7 @@ void emit32(unsigned n)
 
 void emit_push()
 {
+    last_push_code_pos = code_pos;
     emit(80);                                   /* 50        push eax */
     stack_pos = stack_pos + 1;
 }
@@ -91,6 +96,7 @@ void emit_number(unsigned x)
 {
     emit(184);                                  /* B8        mov eax, x */
     emit32(x);
+    insn_history1 = 31;
 }
 
 void emit_string(unsigned len, char *s)
@@ -101,30 +107,39 @@ void emit_string(unsigned len, char *s)
     emit(88);                                   /* 58        pop eax */
 }
 
-void access_var(unsigned which, unsigned ofs, unsigned global, unsigned local)
+/* reg==0 eax
+   reg==8 ecx */
+void access_var(unsigned which,
+                    unsigned ofs,
+                    unsigned reg,
+                    unsigned opcode_global,
+                    unsigned opcode_local)
 {
-    if (which) {                               /* global variable */
-        emit(global);
-        if (global == local) emit(5); /* other than mov requires extra byte */
+    if (which) {                        /* global variable */
+        emit(opcode_global);
+        if (opcode_global == opcode_local)
+             emit(reg+5);               /* other than mov requires extra byte */
+        emit32(ofs);
+        return;
     }
-    else {                                      /* local variable */
-        emit(local);
-        ofs = (stack_pos - ofs + num_params + 1) << 2;
 
-        /* code optimization for 8-bit immediates */
-        if (ofs < 128) {
-            emit(68); emit(36);                 /* ?? 44 24  ??? eax, [esp+imm8] */
-            emit(ofs);
-            return;
-        }
-        emit(132); emit(36);                    /* ?? 84 24  ??? eax, [esp+ofs] */
+    emit(opcode_local);                 /* local variable */
+    ofs = (stack_pos - ofs + num_params + 1) << 2;
+
+    /* code optimization for 8-bit immediates */
+    if (ofs < 128) {
+        emit(reg+68); emit(36);         /* ?? 44 24  ??? eax, [esp+imm8] */
+        emit(ofs);
+        return;
     }
+
+    emit(reg+132); emit(36);            /* ?? 84 24  ??? eax, [esp+ofs] */
     emit32(ofs);
 }
 
 void emit_store(unsigned global, unsigned ofs)
 {
-    access_var(global, ofs, 163, 137);
+    access_var(global, ofs, 0, 163, 137);
     /* global           A3 -- -- -- --          mov [imm32], eax
        local short      89 44 24 --             mov [esp+imm7], eax
        local long       89 84 24 -- -- -- --    mov [esp+imm31], eax */
@@ -132,15 +147,19 @@ void emit_store(unsigned global, unsigned ofs)
 
 void emit_load(unsigned global, unsigned ofs)
 {
-    access_var(global, ofs, 161, 139);
+    last_load_global = global;
+    last_load_ofs = ofs;
+
+    access_var(global, ofs, 0, 161, 139);
     /* global           A1 -- -- -- --          mov eax, [imm32]
        local short      8B 44 24 --             mov eax, [esp+imm7]
        local long       8B 84 24 -- -- -- --    mov eax, [esp+imm31] */
+    insn_history1 = 32;
 }
 
 void emit_index_push(unsigned global, unsigned ofs)
 {
-    access_var(global, ofs, 3, 3);
+    access_var(global, ofs, 0, 3, 3);
     /* global           03 05 -- -- -- --       add eax, [imm32]
        local short      03 44 24 --             add eax, [esp+imm7]
        local long       03 84 24 -- -- -- --    add eax, [esp+imm31] */
@@ -156,28 +175,31 @@ void emit_pop_store_array()
 
 void emit_index_load_array(unsigned global, unsigned ofs)
 {
-    access_var(global, ofs, 3, 3);
+    access_var(global, ofs, 0, 3, 3);
     /* global           03 05 -- -- -- --       add eax, [imm32]
        local short      03 44 24 --             add eax, [esp+imm7]
        local long       03 84 24 -- -- -- --    add eax, [esp+imm31] */
     emit(15); emit(182); emit(0);               /* 0F B6 00  movzb eax, [eax] */
 }
 
-/* Test if previous instructions were
-     push eax
-     mov eax, imm32 */
-unsigned check_for_imm()
-{
-    return ((buf[code_pos - 6] == 80) & (buf[code_pos - 5] == 184));
-}
 
 void emit_operation(unsigned op)
 {
+        /*               <<  >>  -   |   ^   +   &   *   /   %   */
+    char *op2code  = " \x8b\x8b\x2b\x0b\x33\x03\x23\xf7\x8b\x8b";
+        /* translate operation to x86 opcode */
+    char *op2modrm = " \x08\x08\x00\x00\x00\x00\x00\x28\x08\x08";
+        /* global +5, short local +44h, long local +84h */
+    unsigned opcode = op2code[op];
+    unsigned modrm = op2modrm[op];
+
+    unsigned last32 = get_32bit(buf + code_pos - 4);
+
     stack_pos = stack_pos - 1;
 
     /* code optimization for constant immediates */
-    if (check_for_imm()) {
-        code_pos = code_pos - 6;
+    if (insn_history1 == 31) {
+        code_pos = last_push_code_pos;
         if (op < 3) {
             emit(193);                          /* C1 E0 ..  shl eax, imm8 */
             emit((op << 3) + 216);              /* C1 E8 ..  shr eax, imm8 */
@@ -186,9 +208,19 @@ void emit_operation(unsigned op)
             return;
         }
         if (op < 8) {
+            if (last32 == 1) {
+                if (op == 3) {
+                    emit(72);                   /* 48        dec eax */
+                    return;
+                }
+                if (op == 6) {
+                    emit(64);                   /* 40        inc eax */
+                    return;
+                }
+            }
             /*                  -   |   ^   +   & */
             emiti("   \x2d\x0d\x35\x05\x25", op);
-            emit_binary_func(4, (char *)buf + code_pos + 1);
+            emit32(last32);
             return;
         }
         /* push eax
@@ -196,8 +228,21 @@ void emit_operation(unsigned op)
            pop ecx
            xchg eax, ecx */
         emit(185);                              /* B9        mov ecx, imm32 */
-        emit_binary_func(4, (char *)buf + code_pos + 1);
+        emit32(last32);
     }
+
+    /* code optimization for single load */
+    else if (insn_history1 == 32) {
+        code_pos = last_push_code_pos;
+        access_var(last_load_global, last_load_ofs, modrm, opcode, opcode);
+        if ((op >= 3) & (op < 9)) return;
+        /* For SHL, SHR, DIV, MOD only `mov ecx, []` was emitted. The remaining
+           code is emitted at the end of this function.
+           DIV and MOD could be further optimized by `div [esp+?]`, but the
+           preceeding `xor edx, edx` and the subsequent `xchg eax, edx` make
+           the code generation very difficult for this rare case */
+    }
+
     else {
         emit(89);                               /* 59        pop ecx */
         if (op <= 3) emit(145);                 /* 91        xchg eax, ecx */
@@ -218,12 +263,24 @@ void emit_operation(unsigned op)
 
 void compare_with_imm()
 {
-    if (check_for_imm()) {
+    stack_pos = stack_pos - 1;
+
+    /* code optimization for constant immediates */
+    if (insn_history1 == 31) {
         code_pos = code_pos - 6;
         emit(61);                               /* 3D        cmp eax, imm32 */
         emit_binary_func(4, (char *)buf + code_pos + 1);
         emit(15);                               /* 0F */
     }
+
+    /* code optimization for single load */
+    else if (insn_history1 == 32) {
+        code_pos = last_push_code_pos;
+        access_var(last_load_global, last_load_ofs, 0, 59, 59);
+                                                /* 3B ...    cmp eax, []   */
+        emit(15);                               /* 0F */
+    }
+
     else {
         emit32(264321369);                      /* 59        pop ecx */
                                                 /* 39 C1     cmp ecx, eax */
@@ -233,9 +290,7 @@ void compare_with_imm()
 
 void emit_comp(unsigned condition)
 {
-    stack_pos = stack_pos - 1;
-    compare_with_imm();                         /* 59        pop ecx */
-                                                /* 39 C1     cmp ecx, eax */
+    compare_with_imm();
     emiti("\x94\x95\x92\x93\x97\x96", condition - 16);
                                                 /* 0F .. C0  setCC al */
     emit32(3233157056);                         /* 0F B6 C0  movzx eax, al */
@@ -249,7 +304,6 @@ unsigned emit_pre_while()
 unsigned emit_if(unsigned condition)
 {
     if (condition) {
-        stack_pos = stack_pos - 1;
         compare_with_imm();
         emiti("\x85\x84\x83\x82\x86\x87", condition - 16);
                                                 /* 0F ..     jCC ... */
@@ -294,7 +348,7 @@ unsigned emit_call(unsigned ofs, unsigned pop, unsigned save)
     emit(232);                                  /* E8        call */
     unsigned r = code_pos;
     emit32(ofs - code_pos - 4);
-    emit_pop(pop);
+    /*emit_pop(pop);*/
     stack_pos = stack_pos - pop;
     return r;
 }
@@ -319,8 +373,14 @@ unsigned emit_global_var()
 
 void emit_return()
 {
-    emit_pop(stack_pos);
-    emit(195);                                  /* C3        ret */
+    emit_pop(stack_pos); /* do not change stack_pos */
+    if (num_params) {
+        emit(194);                              /* C2 nn nn      ret n */
+        emit(4*num_params); /* FIXME: num_params > 63 */
+        emit(0);
+        return;
+    }
+    emit(195);                                  /* C3   ret */
 }
 
 unsigned emit_func_begin(unsigned n)
