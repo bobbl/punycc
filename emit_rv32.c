@@ -2,14 +2,6 @@
  * Code Generation for RV32IM
  **********************************************************************/
 
-/*
-   TODO:
-   * Stack durch subtrahieren zurücksetzen (mehrfach)
-   * Eventuell: Registernummern umsortieren, so dass Parameter am Anfang
-     nicht in andere Register verschoben werden
-*/
-
-
 
 /* constants */
 unsigned buf_size;

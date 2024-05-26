@@ -378,7 +378,7 @@ void parse_factor()
         unsigned ofs = get_32bit(buf + sym);
         get_token();
 
-        if ((type == 72) | (type == 73)) { /* function */
+        if ((type | 1) == 73) { /* type 72 or 72: function */
             expect('(');
             unsigned argno = 0;
             unsigned save = emit_pre_call();
