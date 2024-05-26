@@ -104,6 +104,10 @@ void store_char()
 
 void get_token()
 {
+    unsigned i;
+    unsigned j;
+    unsigned len;
+
     char  *first_map  = " !\x22  \x0a\x07\x27()\x08\x06,\x03 \x09^^^^^^^^^^ ;\x12=\x14  __________________________[ ]\x05_ __________________________{\x04}  ";
 
     token_size = syms_head - code_pos;
@@ -146,11 +150,11 @@ void get_token()
         while (ch != 34) {
             if (ch == 92) { /* \ */
                 if (next_char() == 'x') {
-                    unsigned h = next_char() - 48; /* 0 */
-                    if (h > 9) h = h - 39;
-                    unsigned l = next_char() - 48; /* 0 */
-                    if (l > 9) l = l - 39;
-                    ch = (h << 4) + l;
+                    i = next_char() - 48; /* 0 */
+                    if (i > 9) i = i - 39;
+                    j = next_char() - 48; /* 0 */
+                    if (j > 9) j = j - 39;
+                    ch = (i << 4) + j;
                 }
             }
             store_char();
@@ -166,7 +170,7 @@ void get_token()
     else if (token == '_') { /* identifier */
 
         /* store identifier in space between code and symbol table */
-        unsigned j = 1;
+        j = 1;
         while (j) {
             store_char();
             if ((ch - 32) < 96)
@@ -177,8 +181,8 @@ void get_token()
 
         /* search keyword */
         char *keywords = "2if4else5while6return7_Pragma4void4char3int8unsigned4long0";
-        unsigned i = 0;
-        unsigned len = 2;
+        i = 0;
+        len = 2;
         token = 96;
         while (len) {
             if (len == token_int) {
@@ -346,6 +350,10 @@ void parse_expression();
  */
 void parse_factor()
 {
+    unsigned sym;
+    unsigned type;
+    unsigned ofs;
+
     while (token == '(') { /* '(' */
         get_token();
 
@@ -371,11 +379,11 @@ void parse_factor()
         get_token();
     }
     else { /* identifier */
-        unsigned sym = sym_lookup();
+        sym = sym_lookup();
         if (sym == 0)
             error(104); /* Error: unknown identifier */
-        unsigned type = buf[sym + 4];
-        unsigned ofs = get_32bit(buf + sym);
+        type = buf[sym + 4];
+        ofs = get_32bit(buf + sym);
         get_token();
 
         if ((type | 1) == 73) { /* type 72 or 72: function */
@@ -478,28 +486,31 @@ unsigned parse_condition()
  */
 void parse_statement()
 {
+    unsigned h;
+    unsigned s;
+
     if (accept('{')) {
-        unsigned h = syms_head;
-        unsigned s = emit_scope_begin();
+        h = syms_head;
+        s = emit_scope_begin();
         while (accept('}') == 0) parse_statement();
         emit_scope_end(s);
         syms_head = h;
     }
     else if (accept(96)) { /* if */
-        unsigned branch_pos = parse_condition();
+        h = parse_condition();
         parse_statement();
         if (accept(97)) { /* else */
-            unsigned not_else_pos = emit_jump_and_fix_branch_here(0, branch_pos);
+            s = emit_jump_and_fix_branch_here(0, h);
             parse_statement();
-            emit_fix_jump_here(not_else_pos);
+            emit_fix_jump_here(s);
         }
-        else emit_fix_branch_here(branch_pos);
+        else emit_fix_branch_here(h);
     }
     else if (accept(98)) { /* while */
-        unsigned loop = emit_pre_while();
-        unsigned exit_pos = parse_condition();
+        h = emit_pre_while();
+        s = parse_condition();
         parse_statement();
-        emit_jump_and_fix_branch_here(loop, exit_pos);
+        emit_jump_and_fix_branch_here(h, s);
     }
     else if (accept(99)) { /* return */
         if (accept(';') == 0) {
@@ -515,7 +526,7 @@ void parse_statement()
         set_32bit(buf + syms_head, emit_local_var());
     }
     else {
-        unsigned s = emit_scope_begin();
+        s = emit_scope_begin();
         parse_expression();
         emit_scope_end(s);
         expect(';');
