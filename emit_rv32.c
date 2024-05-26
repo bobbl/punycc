@@ -362,13 +362,15 @@ unsigned emit_fix_call(unsigned from, unsigned to)
     return insn_jal(1, to - from);
 }
 
-unsigned emit_local_var()
+unsigned emit_local_var(unsigned init)
 {
     num_locals = num_locals + 1;
     update_locals(num_locals);
 
-    emit_stype(10559523, num_locals); /* set initial value */
+    if (init) {                                 /* set initial value */
+        emit_stype(10559523, num_locals);
         /* SW A0, num_locals(SP) */
+    }
 
     return num_locals;
 }

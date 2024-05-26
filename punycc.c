@@ -521,9 +521,13 @@ void parse_statement()
     }
     else if (accept_type()) { /* variable declaration */
         sym_append(0 /* don't care */, 74); /* local variable */
-        if (accept('=')) parse_expression();
+        s = 0;
+        if (accept('=')) {
+            parse_expression();
+            s = 1;
+        }
         expect(';');
-        set_32bit(buf + syms_head, emit_local_var());
+        set_32bit(buf + syms_head, emit_local_var(s));
     }
     else {
         s = emit_scope_begin();

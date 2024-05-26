@@ -373,7 +373,7 @@ unsigned emit_fix_call(unsigned from, unsigned to)
 }
 
 
-unsigned emit_local_var()
+unsigned emit_local_var(unsigned init)
 {
     num_locals = num_locals + 1;
 
@@ -382,15 +382,7 @@ unsigned emit_local_var()
     buf[func_start_pos+6] = num_locals; /* number of local vars */
     buf[func_start_pos+7] = 127;        /* type: i32 */
 
-    /* if there is something on the stack, write it to the new variable */
-    if (stack_pos) {
-        /* Not absolutely sure if this assumption holds:
-           If there is something on the stack, it is from an expression with
-           the initial value for the local variable. Or it is the unused
-           result from an earlier function call that will be dropped later.
-           In the later case it does not mind if we drop the value by writing
-           it to the local variable, because the variable has no initial value.
-        */
+    if (init) {
         emit_store(0, num_params + num_locals);
     }
 

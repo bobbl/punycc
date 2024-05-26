@@ -465,7 +465,7 @@ unsigned emit_fix_call(unsigned from, unsigned to)
     return insn_bl(to - from - 4);
 }
 
-unsigned emit_local_var()
+unsigned emit_local_var(unsigned init)
 {
     emit_push();
     return stack_pos + num_params + 1;

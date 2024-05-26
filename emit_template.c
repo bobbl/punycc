@@ -253,8 +253,10 @@ unsigned emit_fix_call(unsigned from, unsigned to);
  **********************************************************************/
 
 
-/* Reserve memory for a local variable and return its address */
-unsigned emit_local_var();
+/* Reserve memory for a local variable and return its address.
+  If `init` is not 0, an initial value is in the accumulator and the variable
+  must be set accordingly. */
+unsigned emit_local_var(unsigned init);
 
 /* Reserve memory for a global variable and return its address */
 unsigned emit_global_var();

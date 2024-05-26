@@ -481,7 +481,7 @@ unsigned emit_fix_call(unsigned from, unsigned to)
     return to - from - 4;
 }
 
-unsigned emit_local_var()
+unsigned emit_local_var(unsigned init)
 {
     unsigned r;
 
@@ -490,7 +490,9 @@ unsigned emit_local_var()
             num_regvars = num_regvars + 1;
             emiti("\x53\x55\x56\x57", num_regvars);
             r = num_regvars + 1073741824;
-            emit_store(0, r); /* if there is an initial value */
+            if (init) {
+                emit_store(0, r);
+            }
             return r;
         }
     }
