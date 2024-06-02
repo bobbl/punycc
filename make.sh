@@ -4,27 +4,29 @@
 help () {
     echo "Usage: $0 <action> ..."
     echo
-    echo "  x86         Set ISA to Intel x86 32 bit (default)"
-    echo "  rv32        Set ISA to RISC-V RV32IM"
-    echo "  armv6m      Set ISA to ARMv6-M (minimal thumb ISA of Cortex-M0)"
-    echo "  wasm        Set ISA to WebAssembly"
+    echo "  x86              Set ISA to Intel x86 32 bit (default)"
+    echo "  rv32             Set ISA to RISC-V RV32IM"
+    echo "  armv6m           Set ISA to ARMv6-M (minimal thumb ISA of Cortex-M0)"
+    echo "  wasm             Set ISA to WebAssembly"
     echo
-    echo "  clang       Use clang to build cross compiler for current ISA (host x86)"
-    echo "  gcc         Use gcc to build cross compiler for current ISA (host x86)"
-    echo "  test_self   Build compiler for ISA"
-    echo "  test_tox86  Use ISA compiler to build cross compiler from ISA to x86"
-    echo "  test_cc500  Compile cc500 with cross compiler and check against original"
-    echo "  test_all    Build 3 compilers for every arch: self, tox86 and cc500"
+    echo "  compile_native   Compile for ISA with the native compiler of the platform"
+    echo "  compile_all      Compile native for all ISAs, then all cross combinations"
+    echo "  stats            Binary sizes of all self-compiled cross compilers"
     echo
-    echo "  all         Compile all targets with gcc, then all cross combinations"
-    echo "  stats       Binary sizes of all self-compiled cross compilers"
+    echo "  test_self        Build compiler for ISA"
+    echo "  test_tox86       Use ISA compiler to build cross compiler from ISA to x86"
+    echo "  test_cc500       Compile cc500 with cross compiler and check against original"
+    echo "  test_multi       Build 3 compilers for every ISA: self, tox86 and cc500"
+    echo "  test_full        Build every cross compiler on every platform and compare"
     echo
-    echo "  disasm <elf>        Disassemble raw ELF with current ISA"
-    echo "  asm-riscv <code>    Assemble to rv32 machine code"
-    echo "                      Surround by \" and separate commands by ;"
+    echo "  disasm <elf>     Disassemble raw ELF with current ISA"
+    echo "  asm-riscv <code> Assemble to rv32 machine code"
+    echo "                   Surround by \" and separate commands by ;"
     echo
-    echo "Use 'QEMU_RV32=path/qemu-riscv32 $0' if qemu is not in the search path"
-    echo "    'QEMU_ARM=path/qemu-arm $0'"
+    echo "Environment variables:"
+    echo "  CC=         native compiler (gcc or clang)"
+    echo "  QEMU_RV32=  path to qemu-riscv32 (if not in the search path)"
+    echo "  QEMU_ARM=   path to qemu-arm"
 }
 
 if [ $# -eq 0 ] 
@@ -36,6 +38,7 @@ fi
 
 
 
+CC=${CC:-clang}
 QEMU_RV32=${QEMU_RV32:-qemu-riscv32}
 QEMU_ARM=${QEMU_ARM:-qemu-arm}
 
@@ -54,25 +57,64 @@ qemu () {
 
 
 
-# build punycc with the compiler given as parameter
-compile () {
-    cat ../host_$arch.c ../emit_$arch.c ../punycc.c > punycc_$arch.c
-    $1 -O2 -o punycc_$arch.clang punycc_$arch.c
+
+# build punycc with the native compiler of the platform (gcc or clang)
+# $1 architecture
+compile_native () {
+    cat ../host_$1.c ../emit_$1.c ../punycc.c > punycc_$1.c
+    "$CC" -O2 -o punycc_$1.native punycc_$1.c
 }
 
 
-
-# use the clang cross compiler to build a compiler for the current arch
-test_self () {
-    cat ../host_$arch.c ../emit_$arch.c ../punycc.c > punycc_$arch.$arch.c
-    ./punycc_$arch.clang < punycc_$arch.$arch.c > punycc_$arch.$arch
+# use native compler for host to compile a punycc cross compiler 
+# $1 host architecture
+# $2 target architecture
+compile_cross () {
+    cat ../host_$1.c ../emit_$2.c ../punycc.c > punycc_$2.$1.c
+    ./punycc_$1.native < punycc_$2.$1.c > punycc_$2.$1
     errorlevel=$?
     if [ $errorlevel -ne 0 ]
     then
         echo "Error $errorlevel"
         exit $errorlevel
     fi
-    chmod +x punycc_$arch.$arch
+    chmod +x punycc_$2.$1
+}
+
+
+compile_all () {
+    for host in $arch_list
+    do
+        compile_native $host
+        for target in $arch_list
+        do
+            compile_cross $host $target
+        done
+    done
+}
+
+
+
+stats () {
+    compile_all
+    echo "        hosts"
+    echo "target  $arch_list"
+    for target in $arch_list
+    do
+        printf "$target\t"
+        for host in $arch_list
+        do
+            filesize=$(stat -c '%s' punycc_$target.$host)
+            printf "$filesize\t"
+        done
+        echo
+    done
+}
+
+
+# use the clang cross compiler to build a compiler for the current arch
+test_self () {
+    compile_cross $arch $arch
     echo $arch compiler size: $(wc -c < punycc_$arch.$arch)
 }
 
@@ -99,7 +141,6 @@ test_cc500 () {
     # use the compiled binary to compile the modified original
     cat ../host_x86.c ../cc500/cc500_mod.c > tmp.c
     $(qemu) ./punycc_tox86.$arch < tmp.c > cc500_mod.x86
-    echo "-------------------------------------------------------------"
 
     # use the compiled (modified) original to compile the original
     chmod +x cc500_mod.x86
@@ -109,53 +150,39 @@ test_cc500 () {
 }
 
 
-
-test_all () {
+test_multi () {
     for arch in $arch_list
     do
-        compile clang
-        echo "============================================================="
+        compile_native $arch
+        echo "-------------------------------------------------------------"
         test_self
-        echo "============================================================="
         test_tox86
-        echo "============================================================="
         test_cc500
         echo "============================================================="
     done
 }
 
 
-
-all () {
-    for host in $arch_list
+# For every arch, generate all cross compilers and compare them to the
+# reference generated by the native c compiler
+test_full () {
+    for arch in $arch_list
     do
-        cat ../host_$host.c ../emit_$host.c ../punycc.c > punycc_$host.c
-        gcc -O2 -o punycc_$host.gcc punycc_$host.c
-
         for target in $arch_list
         do
-            cat ../host_$host.c ../emit_$target.c ../punycc.c > punycc_$target.$host.c
-            ./punycc_$host.gcc < punycc_$target.$host.c > punycc_$target.$host
-            chmod +x punycc_$target.$host
+            for host in $arch_list
+            do
+                printf "%s %s %s        \r" $arch $target $host
+                $(qemu) ./punycc_$host.$arch < punycc_$target.$host.c > tmp.$arch.$host.$target
+                errorlevel=$?
+                if [ $errorlevel -ne 0 ]
+                then
+                    echo "Error $errorlevel"
+                    exit $errorlevel
+                fi
+                diff punycc_$target.$host tmp.$arch.$host.$target
+            done
         done
-    done
-}
-
-
-
-stats () {
-    all
-    echo "        hosts"
-    echo "target  $arch_list"
-    for target in $arch_list
-    do
-        printf "$target\t"
-        for host in $arch_list
-        do
-            filesize=$(stat -c '%s' punycc_$target.$host)
-            printf "$filesize\t"
-        done
-        echo
     done
 }
 
@@ -176,16 +203,15 @@ do
         armv6m)         arch="armv6m" ;;
         wasm)           arch="wasm" ;;
 
-        clang)          compile clang ;;
-        gcc)            compile gcc ;;
+        compile_native) compile_native $arch ;;
+        compile_all)    compile_all ;;
+        stats)          stats ;;
 
         test_self)      test_self ;;
         test_tox86)     test_tox86 ;;
         test_cc500)     test_cc500 ;;
-        test_all)       test_all ;;
-
-        all)            all ;;
-        stats)          stats ;;
+        test_multi)     test_multi ;;
+        test_full)      test_full ;;
 
         disasm)
             cd ..
