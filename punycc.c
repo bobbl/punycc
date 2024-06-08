@@ -50,11 +50,11 @@ unsigned token;
 unsigned token_int;
 unsigned token_size;
 char *token_buf;
-unsigned syms_head;
+unsigned *syms_head;
 
 void itoa4(unsigned x)
 {
-    char *s = (char *)buf + syms_head - 16;
+    char *s = (char *)syms_head - 16;
     x = x * 134218; /* x = x * (((1<<27)/1000) + 1) */
     s[0] = (x>>27) + '0';
     x = (x & 134217727) * 5;  /* 0x07FFFFFF */
@@ -110,7 +110,7 @@ void get_token()
 
     char  *first_map  = " !\x22  \x0a\x07\x27()\x08\x06,\x03 \x09^^^^^^^^^^ ;\x12=\x14  __________________________[ ]\x05_ __________________________{\x04}  ";
 
-    token_size = syms_head - code_pos;
+    token_size = (char *)syms_head - buf - code_pos;
     if (token_size < 1024)
         error(100); /* Error: buffer overflow */
     token_size = token_size - 512;
@@ -241,16 +241,16 @@ void get_token()
  **********************************************************************/
 
 
-unsigned sym_lookup()
+unsigned *sym_lookup()
 {
     if (token != '_')
         error(103); /* Error: identifier expected */
 
-    unsigned s = syms_head;
-    while (s < buf_size) {
-        unsigned len = buf[s + 5];
+    char *s = (char *)syms_head;
+    while (s < buf + buf_size) {
+        unsigned len = s[5];
         if (len == token_int) {
-            if (token_cmp((char *)buf + s + 6, token_int)) return s;
+            if (token_cmp(s + 6, token_int)) return (unsigned *)s;
         }
         s = s + len + 6;
     }
@@ -259,34 +259,40 @@ unsigned sym_lookup()
 
 void sym_append(unsigned addr, unsigned type)
 {
-    syms_head = syms_head - token_int - 6;
-    set_32bit(buf + syms_head, addr);
-    buf[syms_head+4] = type;
-    buf[syms_head+5] = token_int;
+    char *s = (char *)syms_head;
+    s = s - token_int - 6;
+    syms_head = (unsigned *)s;
+
+    *syms_head = addr;
+    s[4] = type;
+    s[5] = token_int;
 
     /* copy backwards in case the token and the symbol table overlap */
-    while (token_int != 0) {
-        token_int = token_int - 1;
-        buf[syms_head + 6 + token_int] = token_buf[token_int];
+    unsigned i = token_int;
+    while (i) {
+        i = i - 1;
+        s[6 + i] = token_buf[i];
     }
     get_token();
 }
 
 
-void sym_fix(unsigned sym, unsigned func_pos)
+void sym_fix(unsigned *sym, unsigned func_pos)
 {
-    if (buf[sym+4] != 72)
+    char *s = (char *)sym;
+    if (s[4] != 72)
         error(105); /* Error: function redefined */
 
-    unsigned i = get_32bit(buf + sym);
-    unsigned next;
-    while (i) {
-        next = get_32bit(buf + i);
-        set_32bit(buf + i, emit_fix_call(i, func_pos));
-        i = next;
+    unsigned *p;
+    unsigned next = *sym;
+    while (next) {
+        p = (unsigned *)(buf + next);
+        unsigned addr = next;
+        next = *p;
+        *p = emit_fix_call(addr, func_pos);
     }
-    set_32bit(buf + sym, func_pos);
-    buf[sym + 4] = 73;
+    *sym = func_pos;
+    s[4] = 73;
 }
 
 
@@ -337,98 +343,7 @@ void expect_type()
         error(106); /* Error: type expected */
 }
 
-void parse_expression();
-
-
-/* assign    = identifier , "=" , expression ;
- * array     = identifier , "[" , expression , "]" ;
- * aasign    = identifier , "[" , expression , "]" , "=" , expression ;
- * call      = identifier , "(" , params , ")" ;
- * lvalue    = identifier | assign | array | aassign | call ;
- * bracketed = "(" , expression , ")" ;
- * factor    = number | string | bracketed | lvalue ;
- */
-void parse_factor()
-{
-    unsigned sym;
-    unsigned type;
-    unsigned ofs;
-
-    while (token == '(') { /* '(' */
-        get_token();
-
-        /* expression in brackets */
-        if (accept_type() == 0) {
-            parse_expression();
-            expect(')');
-            return;
-        }
-
-        /* ignore type cast */
-        expect(')');
-    }
-
-    if (token == '^') { /* number */
-        emit_number(token_int);
-        get_token();
-    }
-    else if (token == '"') { /* string */
-        set_32bit((unsigned char *)token_buf + token_int, 0);
-            /* append 4 zero bytes to simplify alignment in the backends */
-        emit_string(token_int, token_buf);
-        get_token();
-    }
-    else { /* identifier */
-        sym = sym_lookup();
-        if (sym == 0)
-            error(104); /* Error: unknown identifier */
-        type = buf[sym + 4];
-        ofs = get_32bit(buf + sym);
-        get_token();
-
-        if ((type | 1) == 73) { /* type 72 or 72: function */
-            expect('(');
-            unsigned argno = 0;
-            unsigned save = emit_pre_call();
-            if (accept(')') == 0) {
-                parse_expression();
-                emit_arg(0);
-                argno = argno + 1;
-                while (accept(',')) {
-                    parse_expression();
-                    emit_arg(argno);
-                    argno = argno + 1;
-                }
-                expect(')');
-            }
-            unsigned link = emit_call(ofs, argno, save);
-            if (type == 72) {
-                set_32bit(buf + link, ofs); 
-                    /* overwrite the call to an undefined address with a link
-                       to the rest of the linked list of calls to this not yet
-                       defined function */
-                set_32bit(buf + sym, link);
-            }
-        }
-        else if (accept('[')) { /* array */
-            parse_expression();
-            expect(']');
-            if (accept('=')) {
-                emit_index_push(type & 1, ofs);
-                parse_expression();
-                emit_pop_store_array();
-            }
-            else emit_index_load_array(type & 1, ofs);
-        }
-        else { /* variable */
-            if (accept('=')) {
-                parse_expression();
-                emit_store(type & 1, ofs);
-            }
-            else emit_load(type & 1, ofs);
-        }
-    }
-}
+void parse_factor();
 
 /* bin_op = "<<" | ">>" | "&" | "|" | "^" | "+" | "-" ;
  * operation = factor , { bin_op , factor } ;
@@ -477,6 +392,101 @@ unsigned parse_condition()
     return emit_if(cond);
 }
 
+/* assign    = identifier , "=" , expression ;
+ * array     = identifier , "[" , expression , "]" ;
+ * aasign    = identifier , "[" , expression , "]" , "=" , expression ;
+ * call      = identifier , "(" , params , ")" ;
+ * lvalue    = identifier | assign | array | aassign | call ;
+ * bracketed = "(" , expression , ")" ;
+ * factor    = number | string | bracketed | lvalue ;
+ */
+void parse_factor()
+{
+    unsigned *sym;
+    unsigned type;
+    unsigned ofs;
+    unsigned deref = accept(8); /* true if '*' */
+
+    while (token == '(') { /* '(' */
+        get_token();
+
+        /* expression in brackets */
+        if (accept_type() == 0) {
+            parse_expression();
+            expect(')');
+            return;
+        }
+
+        /* ignore type cast */
+        expect(')');
+    }
+
+    if (token == '^') { /* number */
+        emit_number(token_int);
+        get_token();
+    }
+    else if (token == '"') { /* string */
+        unsigned *t = (unsigned *)(token_buf + token_int);
+        *t = 0;
+            /* append 4 zero bytes to simplify alignment in the backends */
+
+        emit_string(token_int, token_buf);
+        get_token();
+    }
+    else { /* identifier */
+        sym = sym_lookup();
+        if (sym == 0)
+            error(104); /* Error: unknown identifier */
+        char *s = (char *)sym;
+        type = s[4];
+        ofs = *sym;
+        get_token();
+
+        if ((type | 1) == 73) { /* type 72 or 72: function */
+            expect('(');
+            unsigned argno = 0;
+            unsigned save = emit_pre_call();
+            if (accept(')') == 0) {
+                parse_expression();
+                emit_arg(0);
+                argno = argno + 1;
+                while (accept(',')) {
+                    parse_expression();
+                    emit_arg(argno);
+                    argno = argno + 1;
+                }
+                expect(')');
+            }
+            unsigned link = emit_call(ofs, argno, save);
+            if (type == 72) {
+                unsigned *l = (unsigned *)(buf + link);
+                *l = ofs;
+                    /* overwrite the call to an undefined address with a link
+                       to the rest of the linked list of calls to this not yet
+                       defined function */
+                *sym = link;
+            }
+        }
+        else if (accept('[')) { /* array */
+            parse_expression();
+            expect(']');
+            if (accept('=')) {
+                emit_index_push(type & 1, ofs);
+                parse_expression();
+                emit_pop_store_array();
+            }
+            else emit_index_load_array(type & 1, ofs);
+        }
+        else { /* variable */
+            if (accept('=')) {
+                parse_expression();
+                emit_store(type & 1, ofs, deref);
+            }
+            else emit_load(type & 1, ofs, deref);
+        }
+    }
+}
+
 /* block     = "{" , statement , "}" ;
  * if        = "if" , condition , statement , [ "else" , statement ] ;
  * while     = "while" , condition , statement ;
@@ -488,13 +498,14 @@ void parse_statement()
 {
     unsigned h;
     unsigned s;
+    unsigned *restore_head;
 
     if (accept('{')) {
-        h = syms_head;
+        restore_head = syms_head;
         s = emit_scope_begin();
         while (accept('}') == 0) parse_statement();
         emit_scope_end(s);
-        syms_head = h;
+        syms_head = restore_head;
     }
     else if (accept(96)) { /* if */
         h = parse_condition();
@@ -527,11 +538,11 @@ void parse_statement()
             s = 1;
         }
         expect(';');
-        set_32bit(buf + syms_head, emit_local_var(s));
+        *syms_head = emit_local_var(s);
     }
     else {
         s = emit_scope_begin();
-        parse_expression();
+        parse_factor();
         emit_scope_end(s);
         expect(';');
     }
@@ -541,10 +552,10 @@ void parse_statement()
  * body     = statement | ";" ;
  * function = type , identifier , "(" , params ,  ")" , body ;
  */
-void parse_function(unsigned sym)
+void parse_function(unsigned *sym)
 {
     expect('(');
-    unsigned restore_head = syms_head;
+    unsigned *restore_head = syms_head;
 
     unsigned n = 0;
     while (accept(')') == 0) {
@@ -584,16 +595,17 @@ void parse_program()
 {
     while (token) {
         expect_type();
-        unsigned sym = sym_lookup();
-        if (sym) { 
+        unsigned *sym = sym_lookup();
+        if (sym) {
             get_token();
             parse_function(sym);
         }
         else { /* unknown identifier */
             sym_append(0, 72); /* undefined function */
             if (accept(';')) {
-                set_32bit(buf + syms_head, emit_global_var());
-                buf[syms_head + 4] = 71; /* global variable */
+                *syms_head = emit_global_var();
+                char *s = (char *)syms_head;
+                s[4] = 71; /* global variable */
             }
             else {
                 parse_function(syms_head);
@@ -606,7 +618,7 @@ int main()
 {
     buf_size  = 65536;
     buf       = malloc(buf_size);
-    syms_head = buf_size;
+    syms_head = (unsigned *)(buf + buf_size);
     lineno    = 1;
 
     next_char();

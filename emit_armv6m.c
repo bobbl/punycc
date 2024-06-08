@@ -6,13 +6,13 @@
 unsigned buf_size;
 
 /* global variables */
-unsigned char *buf;
+char *buf;
 unsigned code_pos;
 unsigned stack_pos;
 unsigned num_params;
 
-unsigned char *immpos;
-unsigned char *immpool;
+char *immpos;
+char *immpool;
 unsigned immpos_base;
 unsigned immpos_pos;
 unsigned immpool_pos;
@@ -20,7 +20,7 @@ unsigned immpool_pos;
 
 
 /* helper to write a 32 bit number to a char array */
-void set_32bit(unsigned char *p, unsigned x)
+void set_32bit(char *p, unsigned x)
 {
     p[0] = x;
     p[1] = x >> 8;
@@ -29,13 +29,14 @@ void set_32bit(unsigned char *p, unsigned x)
 }
 
 /* helper to read 32 bit number from a char array */
-unsigned get_32bit(unsigned char *p)
+unsigned get_32bit(char *p)
 {
-    return p[0] +
-          (p[1] << 8) +
-          (p[2] << 16) +
-          (p[3] << 24);
+    return (p[0] & 255) +
+          ((p[1] & 255) << 8) +
+          ((p[2] & 255) << 16) +
+          ((p[3] & 255) << 24);
 }
+
 
 void emit(unsigned b)
 {
@@ -84,7 +85,7 @@ void empty_immpool()
     /* fix imm offsets */
     i = 0;
     while (i < immpos_pos) {
-        unsigned pos = immpos_base + immpos[i] + (immpos[i + 1] << 8);
+        unsigned pos = immpos_base + (immpos[i] & 255) + ((immpos[i + 1] & 255) << 8);
         buf[pos] = buf[pos] + code_base - (pos >> 2) - 1;
         i = i + 2;
     }
@@ -175,7 +176,7 @@ unsigned insn_bl(unsigned disp)
 void adjust_immpool_load()
 {
     immpos_pos = immpos_pos - 2;
-    immpool_ref(buf[code_pos + 2] << 2);
+    immpool_ref((buf[code_pos + 2] & 255) << 2);
     emit(73);
 }
 
@@ -184,12 +185,11 @@ void adjust_immpool_load()
 unsigned swap_or_pop()
 {
     stack_pos = stack_pos - 1;
+    unsigned b6543 = get_32bit(buf + code_pos - 6);
+    unsigned b2 = buf[code_pos - 2] & 255;
+    unsigned b1 = buf[code_pos - 1] & 255;
 
-    unsigned b2 = buf[code_pos - 2];
-    unsigned b1 = buf[code_pos - 1];
-
-    if ((buf[code_pos - 4] == 1)        /* 01 B4   PUSH {R0} */
-        & (buf[code_pos - 3] == 180))
+    if (((b6543>>16) & 65535) == 46081) /* 01 B4   PUSH {R0} */
     {
         if (b1 == 32) {                 /* ?? 20   MOVS R0, imm */
             code_pos = code_pos - 4;
@@ -205,18 +205,18 @@ unsigned swap_or_pop()
         }
         if (b1 == 72) {                 /* ?? 48   LDR R0, [PC, #??] */
             code_pos = code_pos - 4;
-            adjust_immpool_load();
+            adjust_immpool_load();      /* ?? 49   LDR R1, [PC, #??] */
             return 7;
         }
     }
-    if ((buf[code_pos - 6] == 1)        /* 01 B4   PUSH {R0} */
-        & (buf[code_pos - 5] == 180)
-        & (buf[code_pos - 3] == 73)
-        & (b2 == 8)
-        & (b1 == 104))
+    /* if (((b6543 & 0xFF00FFFF) == 0x4900B401) */
+    if (((b6543 & 4278255615) == 1224782849)
+                                        /* 01 B4   PUSH {R0} */
+                                        /* ?? 49   LDR R1, [PC, #??] */
+        & (((b1 << 8) + b2) == 26632))  /* 08 68   LDR R0, [R1] */
     {
         code_pos = code_pos - 6;
-        adjust_immpool_load();
+        adjust_immpool_load();          /* ?? 49   LDR R1, [PC, #??] */
         emit16(26633);                  /* 09 68   LDR R1, [R1] */
         return 7;
     }
@@ -264,23 +264,32 @@ void emit_string(unsigned len, char *s)
     check_immpool();
 }
 
-void emit_store(unsigned global, unsigned ofs)
+void emit_store(unsigned which, unsigned ofs, unsigned deref)
 {
-    access_var(global, ofs, 96, 8);
-    /* global   -- -- 08 60     LDR R1, imm32 ; STR R0, [R1]
+    access_var(which, ofs, (deref << 3) + 96, deref + 8);
+    /* no deref:
+       global   -- -- 08 60     LDR R1, imm32 ; STR R0, [R1]
        local    -- 90           STR R0, [SP, #ofs] */
+
+    /* deref:
+       global   -- -- 09 68     LDR R1, imm32 ; LDR R1, [R1]
+       local    -- 99           LDR R1, [SP, #ofs] */
+    if (deref) emit16(24584);
+                     /* 08 60   STR R0, [R1] */
 }
 
-void emit_load(unsigned global, unsigned ofs)
+void emit_load(unsigned which, unsigned ofs, unsigned deref)
 {
-    access_var(global, ofs, 104, 8);
+    access_var(which, ofs, 104, 8);
     /* global   -- -- 08 68     LDR R1, imm32 ; LDR R0, [R1]
        local    -- 98           LDR R0, [SP, #ofs] */
+    if (deref) emit16(26624);
+                     /* 00 68   LDR R0, [R0] */
 }
 
-void emit_index_push(unsigned global, unsigned ofs)
+void emit_index_push(unsigned which, unsigned ofs)
 {
-    access_var(global, ofs, 104, 9);
+    access_var(which, ofs, 104, 9);
     /* global   -- -- 09 68     LDR R1, imm32 ; LDR R1, [R1]
        local    -- 99           LDR R1, [SP, #ofs] */
     emit16(17416);
@@ -295,9 +304,9 @@ void emit_pop_store_array()
     /* no swap  emit16(28680);             08 70   STRB R0, [R1] */
 }
 
-void emit_index_load_array(unsigned global, unsigned ofs)
+void emit_index_load_array(unsigned which, unsigned ofs)
 {
-    access_var(global, ofs, 104, 9);
+    access_var(which, ofs, 104, 9);
     /* global   -- -- 09 68     LDR R1, imm32 ; LDR R1, [R1]
        local    -- 99           LDR R1, [SP, #ofs] */
     emit16(23616);                      /* 40 5C   LDRB R0, [R0, R1] */

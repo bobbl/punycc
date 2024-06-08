@@ -7,7 +7,7 @@
 unsigned buf_size;
 
 /* global variables */
-unsigned char *buf;
+char *buf;
 unsigned code_pos;
 unsigned reg_pos;
 unsigned num_globals;
@@ -28,7 +28,7 @@ unsigned last_branch_target;
 
 
 /* helper to write a 32 bit number to a char array */
-void set_32bit(unsigned char *p, unsigned x)
+void set_32bit(char *p, unsigned x)
 {
     p[0] = x;
     p[1] = x >> 8;
@@ -37,13 +37,14 @@ void set_32bit(unsigned char *p, unsigned x)
 }
 
 /* helper to read 32 bit number from a char array */
-unsigned get_32bit(unsigned char *p)
+unsigned get_32bit(char *p)
 {
-    return p[0] +
-          (p[1] << 8) +
-          (p[2] << 16) +
-          (p[3] << 24);
+    return (p[0] & 255) +
+          ((p[1] & 255) << 8) +
+          ((p[2] & 255) << 16) +
+          ((p[3] & 255) << 24);
 }
+
 
 
 unsigned emit_binary_func(unsigned n, char *s)
@@ -128,27 +129,40 @@ void emit_string(unsigned len, char *s)
     emit_binary_func(aligned_len, s);
 }
 
-void emit_store(unsigned global, unsigned ofs)
+void emit_store(unsigned which, unsigned ofs, unsigned deref)
 {
-    /* reg_pos is always 10 at this point */
-    emit_stype(10559523 + (global << 15), ofs);
-        /* SW A0, (ofs+1)(REG[2+global]) */
+    if (deref) {
+        emit_isdo(ofs << 2, which, reg_pos, 73859);
+            /* LW REG[reg_pos+1], ofs(REG[2+global]) */
+        emit_isdo(reg_pos, reg_pos, 0, 40995);
+            /* SW reg_pos, 0(REG[reg_pos+1]) */
+    }
+    else {
+        /* reg_pos is always 10 at this point */
+        emit_stype(10559523 + (which << 15), ofs);
+            /* SW A0, (ofs+1)(REG[2+global]) */
+    }
 }
 
-void emit_load(unsigned global, unsigned ofs)
+void emit_load(unsigned which, unsigned ofs, unsigned deref)
 {
 /*  Accumulate the constant adds to the arguments in the opcode:
     emit_insn_lw(reg_pos, global + 2, ofs + 1);
     emit_isdo((ofs + 1)<<2, global + 2, reg_pos, 8195);
 */
-    emit_isdo(ofs << 2, global, reg_pos, 73731);
+    emit_isdo(ofs << 2, which, reg_pos, 73731);
         /* LW reg_pos, ofs(REG[2+global]) */
+
+    if (deref) {
+        emit_isdo(0, reg_pos, reg_pos, 8195);
+            /* LW REG[reg_pos], 0(REG[reg_pos]) */
+    }
 }
 
 void emit_index_push(unsigned global, unsigned ofs)
 {
     emit_isdo(ofs << 2, global, reg_pos, 73859);
-        /* LW reg_pos+1, ofs(REG[2+global]) */
+        /* LW REG[reg_pos+1], ofs(REG[2+global]) */
 
     emit_isdo(reg_pos, reg_pos, reg_pos, 1048627);
         /* ADD REG[reg_pos], REG[reg_pos], REG[reg_pos+1] */
@@ -164,17 +178,14 @@ void emit_pop_store_array()
         /* 00B50023  SB A1,0(A0) */
 }
 
-void emit_index_load_array(unsigned global, unsigned ofs)
+void emit_index_load_array(unsigned which, unsigned ofs)
 {
-    emit_index_push(global, ofs);
+    emit_index_push(which, ofs);
     reg_pos = reg_pos - 1;
 
     emit_isdo(0, reg_pos, reg_pos, 16387);
         /* LBU REG[reg_pos], 0(REG[reg_pos]) */
 }
-
-
-
 
 void emit_operation(unsigned t)
 {
@@ -213,7 +224,7 @@ void emit_operation(unsigned t)
     }
 
     char *code_arith = "    \x33\x10\x10\x00\x33\x50\x10\x00\x33\x00\x10\x40\x33\x60\x10\x00\x33\x40\x10\x00\x33\x00\x10\x00\x33\x70\x10\x00\x33\x00\x10\x02\x33\x50\x10\x02\x33\x70\x10\x02"; 
-    emit_isdo(reg_pos, reg_pos, reg_pos, get_32bit((unsigned char *)code_arith + (t<<2)));
+    emit_isdo(reg_pos, reg_pos, reg_pos, get_32bit(code_arith + (t<<2)));
 }
 
 void emit_comp(unsigned t)
@@ -252,9 +263,14 @@ unsigned emit_pre_while()
 
 unsigned emit_if(unsigned condition)
 {
-    unsigned o = 327779;
-        /* in this case reg_pos must be 10 */
-        /* 00050063     BEQZ A0, ... */
+    /* in this case reg_pos must be 10 */
+    unsigned o = 10485859;  
+        /* 00A00063     BEQ ZERO, A0, +0 */
+        /* Don't use the recommended `BEQ A0, ZERO, +0` which is abbreviated
+           as `BNEZ A0, +0`.
+           Reason: In refactor() a0 will be replaced by a register and this way
+           A0 remains at the same position in the opcode and no special case is
+           needed. */
 
     if (condition) {
         /* reg_pos must be 11 */
@@ -266,7 +282,12 @@ unsigned emit_if(unsigned condition)
             if (last_insn == 1427) { /* 00000593  addi a1, x0, 0 */
                 /* optimization if compared with 0 */
                 code_pos = code_pos - 4;
-                o = 331875; /* 00051063  bnez a0, +0 */
+                o = 10489955;  /* 00A01063 bne zero, a0, +0 */
+                    /* Don't use the recommended `bne a0, zero, +0` which is
+                       abbreviated as `bnez a0, +0`.
+                       Reason: in refactor() a0 will be replaced by a register
+                       and this way a0 remains at the same position in the
+                       opcode and no special case is needed. */
             }
         }
         else if (condition < 20) o = 11890787;
@@ -597,7 +618,7 @@ void emit_func_end()
             /* 00010113  ADD SP, SP, 4*(max_locals+1) */
         unsigned next = addsp_list;
         while (next) {
-            unsigned char *p = buf + next;
+            char *p = buf + next;
             next = get_32bit(p);
             set_32bit(p, insn);
         }

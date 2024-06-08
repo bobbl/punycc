@@ -15,7 +15,7 @@ TODO
 unsigned buf_size; /* total size of all buffers */
 
 /* global variables */
-unsigned char *buf;
+char *buf;
 unsigned code_pos;
 unsigned stack_pos;
 unsigned num_params;
@@ -73,7 +73,7 @@ while:
 
 
 /* helper to write a 32 bit number to a char array */
-void set_32bit(unsigned char *p, unsigned x)
+void set_32bit(char *p, unsigned x)
 {
     p[0] = x;
     p[1] = x >> 8;
@@ -83,13 +83,14 @@ void set_32bit(unsigned char *p, unsigned x)
 
 
 /* helper to read 32 bit number from a char array */
-unsigned get_32bit(unsigned char *p)
+unsigned get_32bit(char *p)
 {
-    return p[0] +
-          (p[1] << 8) +
-          (p[2] << 16) +
-          (p[3] << 24);
+    return (p[0] & 255) +
+          ((p[1] & 255) << 8) +
+          ((p[2] & 255) << 16) +
+          ((p[3] & 255) << 24);
 }
+
 
 
 void emit(unsigned b)
@@ -188,37 +189,48 @@ void emit_string(unsigned len, char *s)
 }
 
 
-void emit_store(unsigned global, unsigned ofs)
+void emit_load(unsigned which, unsigned ofs, unsigned deref)
 {
-    if (global) {
-        emit(36);                               /* 24           global.set */
-    }
-    else {
-        ofs = ofs - 1;
-        emit(33);                               /* 21           local.set */
-    }
-    emit_leb(ofs);
-    stack_pos = stack_pos - 1;
-}
-
-
-void emit_load(unsigned global, unsigned ofs)
-{
-    if (global) {
-        emit(35);                               /* 23           global.get */
-    }
-    else {
-        ofs = ofs - 1;
-        emit(32);                               /* 20           local.get */
-    }
-    emit_leb(ofs);
+    emit((which * 3) + 32);                     /* 23           global.get */
+                                                /* 20           local.get */
+    emit_leb(ofs + which - 1);
     stack_pos = stack_pos + 1;
+
+    if (deref) {
+        emit(40); emit(0); emit(0);             /* 28 00 00     i32.load */
+    }
 }
 
 
-void emit_index_push(unsigned global, unsigned ofs)
+void emit_store(unsigned which, unsigned ofs, unsigned deref)
 {
-    emit_load(global, ofs);
+    if (deref) {
+        /* Address and value are in the wrong order, but there is no
+           instruction to swap the topmost elements.
+           Therefore pop value to a local variable, then push address,
+           then push value back. */
+        emit(33);                               /* 21 ...       local.set */
+        unsigned tmpvar = num_params + num_locals;
+        emit_leb(tmpvar);
+        emit_load(which, ofs, 0);               /*              local/global.get */
+        emit(32);                               /* 20 ...       local.get */
+        emit_leb(tmpvar);
+        emit(54); emit(0); emit(0);             /* 36 00 00     i32.store */
+        num_locals = num_locals + 1;
+        stack_pos = stack_pos - 2;
+    }
+    else {
+        emit((which * 3) + 33);                 /* 24           global.set */
+                                                /* 21           local.set */
+        emit_leb(ofs + which - 1);
+        stack_pos = stack_pos - 1;
+    }
+}
+
+
+void emit_index_push(unsigned which, unsigned ofs)
+{
+    emit_load(which, ofs, 0);
     emit(106);                                  /* 6A           i32.add */
     stack_pos = stack_pos - 1;
 }
@@ -231,9 +243,9 @@ void emit_pop_store_array()
 }
 
 
-void emit_index_load_array(unsigned global, unsigned ofs)
+void emit_index_load_array(unsigned which, unsigned ofs)
 {
-    emit_index_push(global, ofs);
+    emit_index_push(which, ofs);
     emit(45); emit(0); emit(0);                 /* 2D 00 00     i32.load8_u */
 }
 
@@ -377,13 +389,8 @@ unsigned emit_local_var(unsigned init)
 {
     num_locals = num_locals + 1;
 
-    /* overwrite number of locals at the beginning of the code */
-    buf[func_start_pos+5] = 1;          /* vector length 1 */
-    buf[func_start_pos+6] = num_locals; /* number of local vars */
-    buf[func_start_pos+7] = 127;        /* type: i32 */
-
     if (init) {
-        emit_store(0, num_params + num_locals);
+        emit_store(0, num_params + num_locals, 0);
     }
 
     return num_params + num_locals; /* one higher than will be emitted */
@@ -410,12 +417,12 @@ void emit_return()
                 code_pos = code_pos - 1;
             }
             else {
-                emit(65); emit(42);                 /* 41 2A        i32.const 42 */
+                emit(65); emit(42);             /* 41 2A        i32.const 42 */
             }
             stack_pos = 1;
         }
 
-        emit(15);                                   /* 0F           return */
+        emit(15);                               /* 0F           return */
         last_insn = 15;
         stack_pos = stack_pos - 1;
     }
@@ -466,6 +473,13 @@ unsigned emit_func_begin(unsigned n)
 
 void emit_func_end()
 {
+    if (num_locals) {
+        /* overwrite number of locals at the beginning of the code */
+        buf[func_start_pos+5] = 1;          /* vector length 1 */
+        buf[func_start_pos+6] = num_locals; /* number of local vars */
+        buf[func_start_pos+7] = 127;        /* type: i32 */
+    }
+
     emit_return();
     end_of_block();
 }

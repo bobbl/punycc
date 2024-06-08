@@ -20,7 +20,7 @@ help () {
     echo "  test_full        Build every cross compiler on every platform and compare"
     echo
     echo "  disasm <elf>     Disassemble raw ELF with current ISA"
-    echo "  asm-riscv <code> Assemble to rv32 machine code"
+    echo "  asm_riscv <code> Assemble to rv32 machine code"
     echo "                   Surround by \" and separate commands by ;"
     echo
     echo "Environment variables:"
