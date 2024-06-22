@@ -15,7 +15,7 @@ TODO
 unsigned buf_size; /* total size of all buffers */
 
 /* global variables */
-char *buf;
+unsigned char *buf;
 unsigned code_pos;
 unsigned stack_pos;
 unsigned num_params;
@@ -73,7 +73,7 @@ while:
 
 
 /* helper to write a 32 bit number to a char array */
-void set_32bit(char *p, unsigned x)
+void set_32bit(unsigned char *p, unsigned x)
 {
     p[0] = x;
     p[1] = x >> 8;
@@ -83,14 +83,13 @@ void set_32bit(char *p, unsigned x)
 
 
 /* helper to read 32 bit number from a char array */
-unsigned get_32bit(char *p)
+unsigned get_32bit(unsigned char *p)
 {
-    return (p[0] & 255) +
-          ((p[1] & 255) << 8) +
-          ((p[2] & 255) << 16) +
-          ((p[3] & 255) << 24);
+    return p[0] +
+          (p[1] << 8) +
+          (p[2] << 16) +
+          (p[3] << 24);
 }
-
 
 
 void emit(unsigned b)
@@ -189,48 +188,37 @@ void emit_string(unsigned len, char *s)
 }
 
 
-void emit_load(unsigned which, unsigned ofs, unsigned deref)
+void emit_store(unsigned global, unsigned ofs)
 {
-    emit((which * 3) + 32);                     /* 23           global.get */
-                                                /* 20           local.get */
-    emit_leb(ofs + which - 1);
-    stack_pos = stack_pos + 1;
-
-    if (deref) {
-        emit(40); emit(0); emit(0);             /* 28 00 00     i32.load */
+    if (global) {
+        emit(36);                               /* 24           global.set */
     }
+    else {
+        ofs = ofs - 1;
+        emit(33);                               /* 21           local.set */
+    }
+    emit_leb(ofs);
+    stack_pos = stack_pos - 1;
 }
 
 
-void emit_store(unsigned which, unsigned ofs, unsigned deref)
+void emit_load(unsigned global, unsigned ofs)
 {
-    if (deref) {
-        /* Address and value are in the wrong order, but there is no
-           instruction to swap the topmost elements.
-           Therefore pop value to a local variable, then push address,
-           then push value back. */
-        emit(33);                               /* 21 ...       local.set */
-        unsigned tmpvar = num_params + num_locals;
-        emit_leb(tmpvar);
-        emit_load(which, ofs, 0);               /*              local/global.get */
-        emit(32);                               /* 20 ...       local.get */
-        emit_leb(tmpvar);
-        emit(54); emit(0); emit(0);             /* 36 00 00     i32.store */
-        num_locals = num_locals + 1;
-        stack_pos = stack_pos - 2;
+    if (global) {
+        emit(35);                               /* 23           global.get */
     }
     else {
-        emit((which * 3) + 33);                 /* 24           global.set */
-                                                /* 21           local.set */
-        emit_leb(ofs + which - 1);
-        stack_pos = stack_pos - 1;
+        ofs = ofs - 1;
+        emit(32);                               /* 20           local.get */
     }
+    emit_leb(ofs);
+    stack_pos = stack_pos + 1;
 }
 
 
 void emit_index_push(unsigned which, unsigned ofs)
 {
-    emit_load(which, ofs, 0);
+    emit_load(which, ofs);
     emit(106);                                  /* 6A           i32.add */
     stack_pos = stack_pos - 1;
 }
@@ -390,7 +378,7 @@ unsigned emit_local_var(unsigned init)
     num_locals = num_locals + 1;
 
     if (init) {
-        emit_store(0, num_params + num_locals, 0);
+        emit_store(0, num_params + num_locals);
     }
 
     return num_params + num_locals; /* one higher than will be emitted */

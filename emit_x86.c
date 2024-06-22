@@ -12,7 +12,7 @@
 unsigned buf_size;
 
 /* global variables */
-char *buf;
+unsigned char *buf;
 unsigned code_pos;
 unsigned stack_pos;
 unsigned num_params;
@@ -27,12 +27,21 @@ unsigned last_imm;
 unsigned need_return;
 
 /* helper to write a 32 bit number to a char array */
-void set_32bit(char *p, unsigned x)
+void set_32bit(unsigned char *p, unsigned x)
 {
     p[0] = x;
     p[1] = x >> 8;
     p[2] = x >> 16;
     p[3] = x >> 24;
+}
+
+/* helper to read 32 bit number from a char array */
+unsigned get_32bit(unsigned char *p)
+{
+    return p[0] +
+          (p[1] << 8) +
+          (p[2] << 16) +
+          (p[3] << 24);
 }
 
 void emit(unsigned b)
@@ -148,8 +157,6 @@ void access_var(unsigned which,
         }
         emit(opcode_local - 2);
         emit(((ofs & 7) << 3) + 224 + (modrm >> 3));
-            /*                        ^^^^^^^^^^^^ 
-               for indirect store: mov ecx, e?? */
         return;
     }
 
@@ -179,7 +186,17 @@ void access_last_load(unsigned modrm, unsigned opcode)
 }
 
 
-void emit_load(unsigned which, unsigned ofs, unsigned deref)
+void emit_store(unsigned which, unsigned ofs)
+{
+    access_var(which, ofs, 0, 163, 137);
+    /* global           A3 -- -- -- --          mov [imm32], eax
+       local register   89 --                   mov e??, eax            !special!
+       local short      89 44 24 --             mov [esp+imm7], eax
+       local long       89 84 24 -- -- -- --    mov [esp+imm31], eax */
+}
+
+
+void emit_load(unsigned which, unsigned ofs)
 {
     last_load_code_pos = code_pos;
     last_load_which = which;
@@ -191,30 +208,6 @@ void emit_load(unsigned which, unsigned ofs, unsigned deref)
        local short      8B 44 24 --             mov eax, [esp+imm7]
        local long       8B 84 24 -- -- -- --    mov eax, [esp+imm31] */
     last_insn = 32;
-
-    if (deref) {
-        emit(139); emit(0);                         /* 8B 00     mov eax, [eax] */
-    }
-}
-
-
-void emit_store(unsigned which, unsigned ofs, unsigned deref)
-{
-    if (deref) {
-        access_var(which, ofs, 8, 139, 139);
-        /* global           8B 0D -- -- -- --       mov ecx, [imm32]
-           local register   89 --                   mov ecx, e??
-           local short      8B 4C 24 --             mov ecx, [esp+imm7]
-           local long       8B 8C 24 -- -- -- --    mov ecx, [esp+imm31] */
-        emit(137); emit(1);                         /* 89 08     mov [ecx], eax */
-    }
-    else {
-        access_var(which, ofs, 0, 163, 137);
-        /* global           A3 -- -- -- --          mov [imm32], eax
-           local register   89 --                   mov e??, eax            !special!
-           local short      89 44 24 --             mov [esp+imm7], eax
-           local long       89 84 24 -- -- -- --    mov [esp+imm31], eax */
-    }
 }
 
 
@@ -499,7 +492,7 @@ unsigned emit_local_var(unsigned init)
             emiti("\x53\x55\x56\x57", num_regvars);
             r = num_regvars + 1073741824;
             if (init) {
-                emit_store(0, r, 0);
+                emit_store(0, r);
             }
             return r;
         }

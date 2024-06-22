@@ -35,6 +35,36 @@ unsigned num_globals;   /* number of global variables */
 
 
 /**********************************************************************
+ * Helper
+ **********************************************************************
+ * These functions are also used by punycc.c and identical in every
+ * backend. A forward reference to this code in punycc.c would be an
+ * option. But forward references lead to larger binaries an therefore
+ * the code is copied to every backend.
+ **********************************************************************/
+
+/* write a 32 bit number to a char array */
+void set_32bit(unsigned char *p, unsigned x)
+{
+    p[0] = x;
+    p[1] = x >> 8;
+    p[2] = x >> 16;
+    p[3] = x >> 24;
+}
+
+/* read 32 bit number from a char array */
+unsigned get_32bit(unsigned char *p)
+{
+    return p[0] +
+          (p[1] << 8) +
+          (p[2] << 16) +
+          (p[3] << 24);
+}
+
+
+
+
+/**********************************************************************
  * Push basic values
  **********************************************************************/
 
@@ -59,16 +89,12 @@ void emit_string(unsigned len, char *s);
  **********************************************************************/
 
 
-/* Load accumulator from a global(1) or local(0) variable with address `ofs`.
-   If `deref` is 1, the variable is a pointer and an additional load is
-   required. */
-void emit_load(unsigned global, unsigned ofs);
-
-
-/* Store accumulator in a global(1) or local(0) variable with address `ofs`.
-   If `deref` is 1, the variable is a pointer, therefore load value as address
-   and store accumulator there. */
+/* store accumulator in a global(1) or local(0) variable with address `ofs` */
 void emit_store(unsigned global, unsigned ofs);
+
+
+/* load accumulator from a global(1) or local(0) variable with address `ofs` */
+void emit_load(unsigned global, unsigned ofs);
 
 
 /* input:  global(1) or local(0) variable used as a pointer
