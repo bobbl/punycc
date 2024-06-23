@@ -87,7 +87,8 @@ unsigned extract_jal_disp(unsigned insn)
     return (((insn >> 20) & 2046) |             /* bits 10..1  = insn[30..21] */
             (((insn >> 20) & 1) << 11) |        /* bit  11     = insn[20]     */
             (insn & 1044480) |                  /* bits 19..12 = insn[19..12]   0xFF000 */
-            ((0 - (insn >> 31)) & 4293918720)); /* bits 31..20 = insn[31]       0xFFF00000 */
+            ((0 - ((insn >> 31) & 1)) & 4293918720)); /* bits 31..20 = insn[31]       0xFFF00000 */
+ /*           ^^^^^ FIXME: signed integer */
 }
 
 void emit_stype(unsigned opcode, unsigned imm)
@@ -177,18 +178,6 @@ void emit_operation(unsigned t)
 {
     reg_pos = reg_pos - 1;
 
-/*
-    if (t == 1)       o = 4147;         / * << sll  00101033 * /
-    else if (t == 2)  o = 20531;        / * >> srl  00105033 * /
-    else if (t == 3)  o = 1073741875;   / * -  sub  40100033 * /
-    else if (t == 4)  o = 24627;        / * |  or   00106033 * /
-    else if (t == 5)  o = 16435;        / * ^  xor  00104033 * /
-    else if (t == 6)  o = 51;           / * +  add  00100033 * /
-    else if (t == 7)  o = 28723;        / * &  and  00107033 * /
-    else if (t == 8)  o = 33554483 + 1048576;     / * *  mul  02100033 * /
-    else if (t == 9)  o = 33574963 + 1048576;     / * / divu  02105033 * /
-    else if (t == 10) o = 33583155 + 1048576;     / * % remu  02107033 * /
-*/
 
     /* code optimization for constant immediates */
 
@@ -197,20 +186,33 @@ void emit_operation(unsigned t)
             /* 0xFF07F  addi ?, x0, ?
                register need not be checked
                if (((last_insn & 1048575) == (19 + ((reg_pos + 11) << 7))) { */
-            char *code_func = " \x01\x05\x00\x06\x05\x00\x07";
             unsigned imm = last_insn >> 20;
             if (t == 3) imm = 0 - imm;
                 /* 00000013  addi REG, REG, -IMM 
                    imm is always positive, therefore -(-2048)=2048
                    cannot happen */
+            char *code_func = " \x01\x05\x00\x06\x05\x00\x07";
+            unsigned o = (code_func[t] << 12) + 19;
+            if (t == 2) o = 1073762323;
+                /* 40005013 srai REG, REG, IMM */
             code_pos = code_pos - 4;
-            emit_isdo(imm, reg_pos, reg_pos, (code_func[t] << 12) + 19);
+            emit_isdo(imm, reg_pos, reg_pos, o);
             return;
         }
     }
 
-    char *code_arith = "    \x33\x10\x10\x00\x33\x50\x10\x00\x33\x00\x10\x40\x33\x60\x10\x00\x33\x40\x10\x00\x33\x00\x10\x00\x33\x70\x10\x00\x33\x00\x10\x02\x33\x50\x10\x02\x33\x70\x10\x02"; 
+    char *code_arith = "    \x33\x10\x10\x00\x33\x50\x10\x40\x33\x00\x10\x40\x33\x60\x10\x00\x33\x40\x10\x00\x33\x00\x10\x00\x33\x70\x10\x00\x33\x00\x10\x02\x33\x40\x10\x02\x33\x60\x10\x02"; 
     emit_isdo(reg_pos, reg_pos, reg_pos, get_32bit((unsigned char *)code_arith + (t<<2)));
+    /*  1 << sll  00101033 */
+    /*  2 >> sra  40105033     unsigned: srl  00105033 */
+    /*  3 -  sub  40100033 */
+    /*  4 |  or   00106033 */
+    /*  5 ^  xor  00104033 */
+    /*  6 +  add  00100033 */
+    /*  7 &  and  00107033 */
+    /*  8 *  mul  02100033 */
+    /*  9 /  div  02104033      unsigned: divu  02105033 */
+    /* 10 %  rem  02106033      unsigned: remu  02107033 */
 }
 
 void emit_comp(unsigned t)
@@ -478,7 +480,7 @@ void refactor(unsigned start_pos, unsigned end_pos)
             /* load or store local variable */
             if (insn & 32) {
                 /* store */
-                unsigned reg_for_var = (((insn >> 9) & 7) + ((insn >> 26) << 3))
+                unsigned reg_for_var = (((insn >> 9) & 7) + (((insn >> 26) & 63) << 3))
                                         + max_reg_pos;
                 unsigned prev_insn = get_32bit(buf + code_pos - 4);
                 unsigned prev_opcode = prev_insn & 127;
@@ -499,7 +501,7 @@ void refactor(unsigned start_pos, unsigned end_pos)
             }
             else {
                 /* load */
-                unsigned reg_for_var = (insn >> 22) + max_reg_pos;
+                unsigned reg_for_var = (insn >> 22) + max_reg_pos; /* highest bits are 0 */
                 unsigned next_insn = get_32bit(buf + i + 4);
                 unsigned next_opcode = next_insn & 127;
                 unsigned rd = (insn >> 7) & 31;
@@ -512,7 +514,7 @@ void refactor(unsigned start_pos, unsigned end_pos)
                         /*            & 0xFE0FFFFF */
                     i = i + 4;
                 }
-                else if ((next_opcode == 19) & 
+                else if ((next_opcode == 19) &
                          (((next_insn >> 15) & 31) == rd)) /* 1st.rd == 2nd.rs1 */
                 {
                     /* arith with immediate */

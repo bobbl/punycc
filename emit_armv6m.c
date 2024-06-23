@@ -311,9 +311,14 @@ void emit_index_load_array(unsigned which, unsigned ofs)
 
 void emit_operation(unsigned op)
 {
+/*
     char *code1 = " \x81\xc1\x08\x08\x48\x08\x08\x48";
     char *code2 = " \x40\x40\x1a\x43\x40\x44\x40\x43";
     char *code3 = " \x88\xc8\x40\x08\x48\x08\x08\x48";
+*/
+    char *code1 = " \x81\x01\x08\x08\x48\x08\x08\x48";
+    char *code2 = " \x40\x41\x1a\x43\x40\x44\x40\x43";
+    char *code3 = " \x88\x08\x40\x08\x48\x08\x08\x48";
 
     if (swap_or_pop()) {
         if (buf[code_pos - 1] == 33) {
@@ -321,7 +326,7 @@ void emit_operation(unsigned op)
             if (op < 3) { /* LSL or LSR */
                 code_pos = code_pos - 2;
                 emit16(((buf[code_pos + 2] & 31) << 6)
-                    + ((op - 1) << 11));    /* LSLS/LSRS R0, R0, (imm & 31) */
+                    + ((op - 1) << 12));    /* LSLS/ASRS R0, R0, (imm & 31) */
                 return;
             }
             if (op == 3) {
@@ -337,7 +342,7 @@ void emit_operation(unsigned op)
         emit(code3[op]);
         emit(code2[op]);
             /* 88 40   LSLS R0, R1          <<  op=1 */
-            /* C8 40   LSRS R0, R1          >>  op=2 */
+            /* 08 41   ASRS R0, R1          >>  op=2 */ /* unsigned C8 40 LSRS R0, R1 */
             /* 40 1A   SUBS R0, R0, R1      -   op=3 */
             /* the remaining ops don't change because they are communtative
                (R0 and R1 are interchangeable */
@@ -346,7 +351,7 @@ void emit_operation(unsigned op)
         emit(code1[op]);
         emit(code2[op]);
             /* 81 40   LSLS R1, R0          <<*/
-            /* C1 40   LSRS R1, R0          >>*/
+            /* 01 41   ASRS R1, R0          <<*/ /* unsigned: C1 40 LSRS R1, R0 */
             /* 08 1A   SUBS R0, R1, R0      - */
             /* 08 43   ORRS R0, R1          | */
             /* 48 40   EORS R0, R1          ^ */

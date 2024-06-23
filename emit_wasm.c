@@ -243,7 +243,9 @@ void emit_index_load_array(unsigned which, unsigned ofs)
 void emit_operation(unsigned op)
 {
     /*               <<  >>  -   |   ^   +   &   *   /   %  */
-    char *code = " \x74\x76\x6b\x72\x73\x6a\x71\x6c\x6e\x70";
+    char *code = " \x74\x75\x6b\x72\x73\x6a\x71\x6c\x6d\x6f";
+/* unsigned:
+    char *code = " \x74\x76\x6b\x72\x73\x6a\x71\x6c\x6e\x70"; */
     emit(code[op]);
     stack_pos = stack_pos - 1;
 }

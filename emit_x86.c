@@ -250,7 +250,7 @@ void emit_operation(unsigned op)
         if (last_insn == 32) {
             code_pos = last_load_code_pos - 1;
             emit(49); emit(210);
-            access_last_load(48, 247);          /* F7 30     div [] */
+            access_last_load(56, 247);          /* F7 38+    idiv [] */
         }
         else {
             if (last_insn == 31) {
@@ -266,8 +266,8 @@ void emit_operation(unsigned op)
                 emit(89);                       /* 59        pop ecx */
                 emit(145);                      /* 91        xchg eax, ecx */
             }
-            emit32(4059550257);                 /* 31 D2     xor edx, edx */
-                                                /* F7 F1     div ecx */
+            emit32(4193767985);                 /* 31 D2     xor edx, edx */
+                                                /* F7 F9     idiv ecx */
         }
         if (op >= 10) emit(146);                /* 92        xchg eax, edx */
         return;
@@ -278,7 +278,7 @@ void emit_operation(unsigned op)
         code_pos = code_pos - 6;
         if (op < 3) {
             emit(193);                          /* C1 E0 ..  shl eax, imm8 */
-            emit((op << 3) + 216);              /* C1 E8 ..  shr eax, imm8 */
+            emit((24*op) + 200);                /* C1 F8 ..  shr eax, imm8 */
             emit(last_imm);
             return;
         }
@@ -330,7 +330,7 @@ void emit_operation(unsigned op)
 
     /*        <<  >>  -   |   ^   +   &   *   */
     emiti(" \xd3\xd3\x29\x09\x31\x01\x21\xf7", op);
-    emiti(" \xe0\xe8\xc8\xc8\xc8\xc8\xc8\xe9", op);
+    emiti(" \xe0\xf8\xc8\xc8\xc8\xc8\xc8\xe9", op);
 }
 
 void compare_with_imm()
