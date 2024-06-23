@@ -82,6 +82,21 @@ compile_cross () {
 }
 
 
+compile_triple () {
+    arch=$1
+    target=$2
+    host=$3
+
+    $(qemu) ./punycc_$host.$arch < punycc_$target.$host.c > tmp.$arch.$host.$target
+    errorlevel=$?
+    if [ $errorlevel -ne 0 ]
+    then
+        echo "$arch $target $host Error $errorlevel"
+        exit $errorlevel
+    fi
+}
+
+
 compile_all () {
     for host in $arch_list
     do
@@ -92,7 +107,6 @@ compile_all () {
         done
     done
 }
-
 
 
 stats () {
@@ -173,13 +187,35 @@ test_full () {
             for host in $arch_list
             do
                 printf "%s %s %s        \r" $arch $target $host
-                $(qemu) ./punycc_$host.$arch < punycc_$target.$host.c > tmp.$arch.$host.$target
-                errorlevel=$?
-                if [ $errorlevel -ne 0 ]
-                then
-                    echo "Error $errorlevel"
-                    exit $errorlevel
-                fi
+                compile_triple $arch $target $host
+                diff punycc_$target.$host tmp.$arch.$host.$target
+            done
+        done
+    done
+}
+
+
+# Same as test_full, but with multiple parallel processes
+test_full_par () {
+    echo "Building in parallel ..."
+    for arch in $arch_list
+    do
+        for target in $arch_list
+        do
+            for host in $arch_list
+            do
+                compile_triple $arch $target $host &
+            done
+        done
+    done
+    wait
+    for arch in $arch_list
+    do
+        for target in $arch_list
+        do
+            for host in $arch_list
+            do
+                printf "%s %s %s        \r" $arch $target $host
                 diff punycc_$target.$host tmp.$arch.$host.$target
             done
         done
@@ -212,6 +248,8 @@ do
         test_cc500)     test_cc500 ;;
         test_multi)     test_multi ;;
         test_full)      test_full ;;
+        test_full_par)  test_full_par ;;
+
 
         disasm)
             cd ..

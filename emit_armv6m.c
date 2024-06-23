@@ -19,6 +19,9 @@ unsigned immpool_pos;
 
 
 
+void error(unsigned no);
+
+
 /* helper to write a 32 bit number to a char array */
 void set_32bit(unsigned char *p, unsigned x)
 {
@@ -69,8 +72,10 @@ void empty_immpool()
     if (code_pos & 2) { /* align to 4 bytes */
         emit16(0);
     }
-    if (code_pos > immpos_base + 1020) exit(200);
+    if (code_pos > (immpos_base + 1020)) {
+        error(200);
         /* too late to empty imm pool: imm pool to far away */
+    }
 
     unsigned code_base = code_pos >> 2;
 
@@ -124,7 +129,9 @@ unsigned immpool_lookup(unsigned imm)
     unsigned i = 0;
     while (i < immpool_pos) {
         unsigned v = get_32bit(immpool + i);
-        if (v == imm) return i;
+        if (v == imm) {
+            return i;
+        }
         i = i + 4;
     }
 
@@ -136,7 +143,7 @@ unsigned immpool_lookup(unsigned imm)
 
 void e_imm(unsigned reg, unsigned imm)
 {
-    if (imm < 256) {
+    if ((imm >> 8) == 0) {
         emit(imm); emit(reg + 32);      /* ?? 20   MOVS reg, imm */
     }
     else {
@@ -348,7 +355,9 @@ void emit_operation(unsigned op)
             /* 48 43   MULS R0, R1          * */
             /* TODO: / and % */
 
-        if (op <= 2) emit16(17928);             /* 08 46   MOV R0, R1 */
+        if (op <= 2) {
+            emit16(17928);              /* 08 46   MOV R0, R1 */
+        }
     }
 }
 
@@ -359,7 +368,9 @@ void emit_comp(unsigned op)
         if (buf[code_pos - 1] == 33) {  /* ?? 21   MOVS R1, #imm */
             buf[code_pos - 1] = 56;     /* ?? 38   SUBS R0, #imm */
         }
-        else emit16(6720);              /* 40 1A   SUBS R0, R0, R1 */
+        else {
+            emit16(6720);               /* 40 1A   SUBS R0, R0, R1 */
+        }
 
         emit16(16961);                  /* 41 42   RSBS R1, R0, #0 */
         emit16((op << 6) + 15688);
@@ -368,23 +379,22 @@ void emit_comp(unsigned op)
 
     }
     else {
-        if (op <= 19) swap = swap ^ 7;
+        emit32(1116217857);             /* 01 22   MOVS R2, #1 */
+                                        /* 88 42   CMP R0, R1 */
+        emit(0);
+        emit((((op >> 1) & 1) ^ (op & 7)) + 216);
+        /*  op     opcode
+            010 -> 1011 DB
+            011 -> 1010 DA
+            100 -> 1100 DC
+            101 -> 1101 DD
 
-        swap = 17032 - swap;
-            /* no swap  emit16(17032);     88 42   CMP R0, R1 */
-            /* swap     emit16(17025);     81 42   CMP R1, R0 */
+            char *bcc = "\xd0\xd1\xdb\xda\xdc\xdd";
+            emit(bcc[op - 16]);
+        */
 
-        if (op & 1) {
-            emit16(8704);               /* 00 22   MOVS R2, #0 */
-            emit16(swap);
-            emit32(1065298);            /* 52 41   ADCS R2, R2 */
+        emit32(1057280);                /* 00 22   MOVS R2, #0 */
                                         /* 10 00   MOVS R0, R2 */
-        }
-        else {
-            emit16(swap);
-            emit32(1111507328);         /* 80 41   SBCS R0, R0 */
-                                        /* 40 42   RSBS R0, R0, #0 */
-        }
     }
 }
 
@@ -400,15 +410,21 @@ unsigned emit_if(unsigned condition)
             if (buf[code_pos - 1] == 33) {
                 buf[code_pos - 1] = 40; /* ?? 28   CMP R0, #imm */
             }
-            else emit16(17032);         /* 88 42   CMP R0, R1 */
+            else {
+                emit16(17032);          /* 88 42   CMP R0, R1 */
+            }
         }
-        else emit16(17025);             /* 81 42   CMP R1, R0 */
+        else {
+            emit16(17025);              /* 81 42   CMP R1, R0 */
+        }
         emit(0);
 
         /* branch over next instruction which is the real jump */
-        char *bcc = "\xd0\xd1\xd3\xd2\xd8\xd9";
+        char *bcc = "\xd0\xd1\xdb\xda\xdc\xdd";
+
         emit(bcc[condition - 16]);
-        /* pure arithmetic alternative:
+        /*char *bcc = "\xd0\xd1\xd3\xd2\xd8\xd9";
+         pure arithmetic alternative:
             emit((((op >> 1) & 1) ^ op) + (op & 4) + 192);
         */
     }
@@ -472,7 +488,9 @@ unsigned emit_local_var(unsigned init)
 
 unsigned emit_global_var()
 {
-    if (code_pos & 2) emit16(0); /* align if necessary */
+    if (code_pos & 2) {
+        emit16(0); /* align if necessary */
+    }
     emit32(0);
     return code_pos + 65532; /* 0x10000 - 4 */
         /* global variables need the code offset */
@@ -482,7 +500,9 @@ void emit_return()
 {
     emit_pop(stack_pos);
     emit16(48384);                              /* 00 BD   POP {PC} */
-    if (immpool_pos) empty_immpool();
+    if (immpool_pos) {
+        empty_immpool();
+    }
 }
 
 unsigned emit_binary_func(unsigned n, char *s)

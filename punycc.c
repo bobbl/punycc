@@ -44,7 +44,7 @@ Token
  * Scanner
  **********************************************************************/
 
-unsigned ch;
+int ch;
 unsigned lineno;
 unsigned token;
 unsigned token_int;
@@ -113,7 +113,8 @@ void get_token()
     unsigned j;
     unsigned len;
 
-    char  *first_map  = " !\x22  \x0a\x07\x27()\x08\x06,\x03 \x09^^^^^^^^^^ ;\x12=\x14  __________________________[ ]\x05_ __________________________{\x04}  ";
+    char *classify_char = "                                 !\x22  \x0a\x07\x27()\x08\x06,\x03 \x09^^^^^^^^^^ ;\x12=\x14  __________________________[ ]\x05_ __________________________{\x04}  ";
+    char *keywords = "2if4else5while6return7_Pragma4void4char3int8unsigned4long0";
 
     token_size = syms_head - code_pos;
     if (token_size < 1024) {
@@ -139,14 +140,14 @@ void get_token()
         }
         next_char();
     }
-    if (ch > 255) {
+    if (ch < 0) { /* negative value: EOF */
         return;
     }
 
-    if ((ch - 32) >= 96) {
-        error(101); /* Error: invalid character */
+    if (ch > 127) {
+        error(101); /* Error: invalid character (or end of file) */
     }
-    token = first_map[ch - 32]; /* mask signed char */
+    token = classify_char[ch];
     if (token == ' ') {
         error(101); /* Error: invalid character */
     }
@@ -182,19 +183,12 @@ void get_token()
     else if (token == '_') { /* identifier */
 
         /* store identifier in space between code and symbol table */
-        j = 1;
-        while (j) {
+        while ((ch <= 127) & ((classify_char[ch] >> 1) == 47)) { /* '^' or '_' */
             store_char();
-            if ((ch - 32) < 96) {
-                j = ((first_map[ch - 32] & 254) == 94); /* '^' or '_' */
-            } else {
-                j = 0;
-            }
         }
         token_buf[token_int] = 0;
 
         /* search keyword */
-        char *keywords = "2if4else5while6return7_Pragma4void4char3int8unsigned4long0";
         i = 0;
         len = 2;
         token = 96;
@@ -463,7 +457,7 @@ void parse_factor()
         ofs = get_32bit(buf + sym);
         get_token();
 
-        if ((type | 1) == 73) { /* type 72 or 72: function */
+        if ((type | 1) == 73) { /* type 72 or 73: function */
             expect('(');
             unsigned argno = 0;
             unsigned save = emit_pre_call();

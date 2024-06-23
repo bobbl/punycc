@@ -349,7 +349,8 @@ void compare_with_imm()
     /* compare with 0 (xor eax, eax) */
     if (last_insn == 33) {
         code_pos = code_pos - 3;
-        emit(133); emit(192);                   /* 85 C0     test eax, eax */
+        emit32(3359230257);                     /* 31 C9     xor    ecx,ecx */
+                                                /* 39 C8     cmp    eax,ecx  */
         emit(15);                               /* 0F */
         return;
     }
@@ -371,7 +372,9 @@ void compare_with_imm()
 void emit_comp(unsigned condition)
 {
     compare_with_imm();
-    emiti("\x94\x95\x92\x93\x97\x96", condition - 16);
+    emiti("\x94\x95\x9c\x9d\x9f\x9e", condition - 16);
+    /* unsigned:
+    emiti("\x94\x95\x92\x93\x97\x96", condition - 16); */
                                                 /* 0F .. C0  setCC al */
     emit32(3233157056);                         /* 0F B6 C0  movzx eax, al */
 }
@@ -385,7 +388,9 @@ unsigned emit_if(unsigned condition)
 {
     if (condition) {
         compare_with_imm();
-        emiti("\x85\x84\x83\x82\x86\x87", condition - 16);
+        emiti("\x85\x84\x8d\x8c\x8e\x8f", condition - 16);
+        /* unsigned:
+        emiti("\x85\x84\x83\x82\x86\x87", condition - 16); */
                                                 /* 0F ..     jCC ... */
     }
     else {

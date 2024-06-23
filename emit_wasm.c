@@ -120,8 +120,10 @@ void emit32(unsigned n)
 void emit_leb(unsigned n)
 {
     unsigned negative = 0;
-    if (n > 2147483647) { 
+    if (n >> 31) {
         /* large uint32 = negative int32, must be emitted as signed LEB */
+        emit(n | 128);
+        n = (n >> 7) & 33554431;
         negative = 112;
     }
 
@@ -250,8 +252,10 @@ void emit_operation(unsigned op)
 void emit_comp(unsigned op)
 {
     /*              ==  !=  <   >=  >   <=  */
+    char *code = "\x46\x47\x48\x4e\x4a\x4c";
+/* unsigned:
     char *code = "\x46\x47\x49\x4f\x4b\x4d";
-/* inverted:
+   unsigned inverted:
     char *code = "\x47\x46\x4f\x49\x4d\x4b";
 */
     emit(code[op - 16]);

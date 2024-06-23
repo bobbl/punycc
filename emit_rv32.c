@@ -105,7 +105,7 @@ void emit_push()
 
 void emit_number(unsigned imm)
 {
-    if ((imm + 2048) < 4096) {
+    if (((imm + 2048) >> 12) == 0) {
         emit_isdo(imm, 0, reg_pos, 19);
                 /* 00000013  ADDI REG[reg_pos], X0, imm */
     }
@@ -232,11 +232,9 @@ void emit_comp(unsigned t)
             /* sltu REG, x0, REG        != */
     }
     else {
-        unsigned o = 45107;
-            /* 0000B033  sltu REG, REG+1, REG     > or <= */
-        if (t < 20) o = 1060915;
-            /* 00103033  sltu REG, REG, REG+1     < or >= */
-        emit_isdo(reg_pos, reg_pos, reg_pos, o);
+        emit_isdo(reg_pos, reg_pos, reg_pos, ((t & 2) * 507904) + 41011);
+            /* 00102033  slt REG, REG, REG+1     < or >=   t=18,19 */
+            /* 0000A033  slt REG, REG+1, REG     > or <=   t=20,21 */
         if (t & 1)  emit_isdo(0, reg_pos, reg_pos, 1064979);
             /* xori REG, REG, 1         >= or <= */
     }
@@ -262,7 +260,7 @@ unsigned emit_if(unsigned condition)
         /* reg_pos must be 11 */
         reg_pos = 10;
 
-        o = 10874979;
+        o = 10866787;
         if (condition < 18) {
             o = 11866211;
             if (last_insn == 1427) { /* 00000593  addi a1, x0, 0 */
@@ -276,14 +274,14 @@ unsigned emit_if(unsigned condition)
                        opcode and no special case is needed. */
             }
         }
-        else if (condition < 20) o = 11890787;
+        else if (condition < 20) o = 11882595;
         o = o - ((condition & 1) << 12);
             /* t==16 00B51063     bne a0, a1, +0    ==
                t==17 00B50063     beq a0, a1, +0    !=
-               t==18 00B57063     bgeu a0, a1, +0   <
-               t==19 00B56063     bltu a0, a1, +0   >=
-               t==20 00A5F063     bgeu a1, a0, +0   >
-               t==21 00A5E063     bltu a1, a0, +0   <=      */
+               t==18 00B55063     bgeu a0, a1, +0   <
+               t==19 00B54063     bltu a0, a1, +0   >=
+               t==20 00A5D063     bgeu a1, a0, +0   >
+               t==21 00A5C063     bltu a1, a0, +0   <=      */
     }
     emit32(o);
     return code_pos - 4;
@@ -591,7 +589,7 @@ void emit_func_end()
 {
     emit_return();
 
-    if ((num_calls == 0) & (max_reg_pos + num_locals < 32)) {
+    if ((num_calls == 0) & ((max_reg_pos + num_locals) < 32)) {
         unsigned function_end_pos = code_pos;
         code_pos = function_start_pos;
         walk_through(function_start_pos + 8, function_end_pos);
