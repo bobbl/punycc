@@ -4,23 +4,23 @@
 
 
 /* constants */
-unsigned buf_size;
+int buf_size;
 
 /* global variables */
 unsigned char *buf;
-unsigned code_pos;
-unsigned reg_pos;
-unsigned num_globals;
-unsigned last_insn;
-unsigned num_locals;
-unsigned max_locals;
-unsigned function_start_pos;
-unsigned num_scope;
-unsigned num_calls;
-unsigned max_reg_pos;
-unsigned addsp_list;
+int code_pos;
+int reg_pos;
+int num_globals;
+int last_insn;
+int num_locals;
+int max_locals;
+int function_start_pos;
+int num_scope;
+int num_calls;
+int max_reg_pos;
+int addsp_list;
 
-unsigned last_branch_target;
+int last_branch_target;
     /* Position where the last branch points to.
        Used to determine the length of the last uninterrupted sequences of
        instructions. */
@@ -28,7 +28,7 @@ unsigned last_branch_target;
 
 
 /* helper to write a 32 bit number to a char array */
-void set_32bit(unsigned char *p, unsigned x)
+void set_32bit(unsigned char *p, int x)
 {
     p[0] = x;
     p[1] = x >> 8;
@@ -37,7 +37,7 @@ void set_32bit(unsigned char *p, unsigned x)
 }
 
 /* helper to read 32 bit number from a char array */
-unsigned get_32bit(unsigned char *p)
+int get_32bit(unsigned char *p)
 {
     return p[0] +
           (p[1] << 8) +
@@ -46,10 +46,10 @@ unsigned get_32bit(unsigned char *p)
 }
 
 
-unsigned emit_binary_func(unsigned n, char *s)
+int emit_binary_func(int n, char *s)
 {
-    unsigned cp = code_pos;
-    unsigned i = 0;
+    int cp = code_pos;
+    int i = 0;
     while (i < n) {
         buf[cp + i] = s[i];
         i = i + 1;
@@ -58,20 +58,20 @@ unsigned emit_binary_func(unsigned n, char *s)
     return cp;
 }
 
-void emit32(unsigned n)
+void emit32(int n)
 {
-    unsigned cp = code_pos;
+    int cp = code_pos;
     code_pos = cp + 4;
     last_insn = n;
     set_32bit(buf + cp, n);
 }
 
-void emit_isdo(unsigned imm, unsigned rs, unsigned rd, unsigned opcode)
+void emit_isdo(int imm, int rs, int rd, int opcode)
 {
     emit32((imm << 20) + (rs << 15) + (rd << 7) + opcode);
 }
 
-unsigned insn_jal(unsigned rd, unsigned immj)
+int insn_jal(int rd, int immj)
 {
     return
         (((immj>>20) & 1) << 31) |      /* bit  31     = imm[20] */
@@ -82,7 +82,7 @@ unsigned insn_jal(unsigned rd, unsigned immj)
         111;                            /* bits  6..0  = 0x6f (jal) */
 }
 
-unsigned extract_jal_disp(unsigned insn)
+int extract_jal_disp(int insn)
 {
     return (((insn >> 20) & 2046) |             /* bits 10..1  = insn[30..21] */
             (((insn >> 20) & 1) << 11) |        /* bit  11     = insn[20]     */
@@ -91,7 +91,7 @@ unsigned extract_jal_disp(unsigned insn)
  /*           ^^^^^ FIXME: signed integer */
 }
 
-void emit_stype(unsigned opcode, unsigned imm)
+void emit_stype(int opcode, int imm)
 {
     emit32(opcode +
         ((imm & 1016   ) << 22) +       /* bits 31..25 = imm[11..5] */
@@ -104,7 +104,7 @@ void emit_push()
     if (reg_pos > max_reg_pos) max_reg_pos = reg_pos;
 }
 
-void emit_number(unsigned imm)
+void emit_number(int imm)
 {
     if (((imm + 2048) >> 12) == 0) {
         emit_isdo(imm, 0, reg_pos, 19);
@@ -120,23 +120,23 @@ void emit_number(unsigned imm)
     }
 }
 
-void emit_string(unsigned len, char *s)
+void emit_string(int len, char *s)
 {
-    unsigned aligned_len = (len + 4) & 4294967292;
+    int aligned_len = (len + 4) & 4294967292;
         /* there are 4 zero bytes appended to s */
     emit32(insn_jal(reg_pos, aligned_len + 4));
         /* JAL REG[reg_pos], align(end_of_string) */
     emit_binary_func(aligned_len, s);
 }
 
-void emit_store(unsigned global, unsigned ofs)
+void emit_store(int global, int ofs)
 {
     /* reg_pos is always 10 at this point */
     emit_stype(10559523 + (global << 15), ofs);
         /* SW A0, (ofs+1)(REG[2+global]) */
 }
 
-void emit_load(unsigned global, unsigned ofs)
+void emit_load(int global, int ofs)
 {
 /*  Accumulate the constant adds to the arguments in the opcode:
     emit_insn_lw(reg_pos, global + 2, ofs + 1);
@@ -146,7 +146,7 @@ void emit_load(unsigned global, unsigned ofs)
         /* LW reg_pos, ofs(REG[2+global]) */
 }
 
-void emit_index_push(unsigned global, unsigned ofs)
+void emit_index_push(int global, int ofs)
 {
     emit_isdo(ofs << 2, global, reg_pos, 73859);
         /* LW REG[reg_pos+1], ofs(REG[2+global]) */
@@ -165,7 +165,7 @@ void emit_pop_store_array()
         /* 00B50023  SB A1,0(A0) */
 }
 
-void emit_index_load_array(unsigned which, unsigned ofs)
+void emit_index_load_array(int which, int ofs)
 {
     emit_index_push(which, ofs);
     reg_pos = reg_pos - 1;
@@ -174,7 +174,7 @@ void emit_index_load_array(unsigned which, unsigned ofs)
         /* LBU REG[reg_pos], 0(REG[reg_pos]) */
 }
 
-void emit_operation(unsigned t)
+void emit_operation(int t)
 {
     reg_pos = reg_pos - 1;
 
@@ -186,13 +186,13 @@ void emit_operation(unsigned t)
             /* 0xFF07F  addi ?, x0, ?
                register need not be checked
                if (((last_insn & 1048575) == (19 + ((reg_pos + 11) << 7))) { */
-            unsigned imm = last_insn >> 20;
+            int imm = last_insn >> 20;
             if (t == 3) imm = 0 - imm;
                 /* 00000013  addi REG, REG, -IMM 
                    imm is always positive, therefore -(-2048)=2048
                    cannot happen */
             char *code_func = " \x01\x05\x00\x06\x05\x00\x07";
-            unsigned o = (code_func[t] << 12) + 19;
+            int o = (code_func[t] << 12) + 19;
             if (t == 2) o = 1073762323;
                 /* 40005013 srai REG, REG, IMM */
             code_pos = code_pos - 4;
@@ -215,7 +215,7 @@ void emit_operation(unsigned t)
     /* 10 %  rem  02106033      unsigned: remu  02107033 */
 }
 
-void emit_comp(unsigned t)
+void emit_comp(int t)
 {
     reg_pos = reg_pos - 1;
 
@@ -242,15 +242,15 @@ void emit_comp(unsigned t)
     }
 }
 
-unsigned emit_pre_while()
+int emit_pre_while()
 {
     return code_pos;
 }
 
-unsigned emit_if(unsigned condition)
+int emit_if(int condition)
 {
     /* in this case reg_pos must be 10 */
-    unsigned o = 10485859;  
+    int o = 10485859;  
         /* 00A00063     BEQ ZERO, A0, +0 */
         /* Don't use the recommended `BEQ A0, ZERO, +0` which is abbreviated
            as `BNEZ A0, +0`.
@@ -289,9 +289,9 @@ unsigned emit_if(unsigned condition)
     return code_pos - 4;
 }
 
-void emit_fix_branch_here(unsigned insn_pos)
+void emit_fix_branch_here(int insn_pos)
 {
-    unsigned immb = code_pos - insn_pos;
+    int immb = code_pos - insn_pos;
     immb = 
         ((immb & 4096) << 19) |     /* bit  31     = immb[12] */
         ((immb & 2016) << 20) |     /* bits 30..25 = immb[10..5] */
@@ -301,26 +301,26 @@ void emit_fix_branch_here(unsigned insn_pos)
     last_branch_target = code_pos;
 }
 
-void emit_fix_jump_here(unsigned insn_pos)
+void emit_fix_jump_here(int insn_pos)
 {
     set_32bit(buf + insn_pos, insn_jal(0, code_pos - insn_pos));
     last_branch_target = code_pos;
 }
 
-unsigned emit_jump_and_fix_branch_here(unsigned destination, unsigned insn_pos)
+int emit_jump_and_fix_branch_here(int destination, int insn_pos)
 {
     emit32(insn_jal(0, destination - code_pos));
     emit_fix_branch_here(insn_pos);
     return code_pos - 4;
 }
 
-unsigned emit_pre_call()
+int emit_pre_call()
 /* save temporary registers and return how many */
 {
-    unsigned r = reg_pos;
+    int r = reg_pos;
     if (r > 10) {
         /* save currently used temporary registers */
-        unsigned i = 10;
+        int i = 10;
         while (i < r) {
             emit_stype(73763 + (i << 20), num_locals + i - 9);
                 /* SW REG[i], (num_locals+i+1-10)(SP) */
@@ -331,20 +331,20 @@ unsigned emit_pre_call()
     return r;
 }
 
-void emit_arg(unsigned i)
+void emit_arg(int i)
 {
     emit_push();
 }
 
-void update_locals(unsigned n)
+void update_locals(int n)
 {
     if (n > max_locals) max_locals = n;
 
 }
 
-unsigned emit_call(unsigned ofs, unsigned pop, unsigned save)
+int emit_call(int ofs, int pop, int save)
 {
-    unsigned r = code_pos;
+    int r = code_pos;
     emit32(insn_jal(1, ofs - code_pos));
     reg_pos = save;
     num_calls = num_calls + 1;
@@ -354,9 +354,9 @@ unsigned emit_call(unsigned ofs, unsigned pop, unsigned save)
         /* restore previously saved temporary registers */
         emit32((reg_pos << 7) + 327699);
             /* 000500513  MV REG[reg_pos], A0 */
-        unsigned i = 10;
+        int i = 10;
         while (i < reg_pos) {
-            emit_isdo((num_locals+i)<<2, 2, i, 4257226755);
+            emit_isdo((num_locals+i)<<2, 2, i, (unsigned int)4257226755);
                 /* LW REG[i], (num_locals+1+i-10)(SP) */
             i = i + 1;
         }
@@ -364,12 +364,12 @@ unsigned emit_call(unsigned ofs, unsigned pop, unsigned save)
     return r;
 }
 
-unsigned emit_fix_call(unsigned from, unsigned to)
+int emit_fix_call(int from, int to)
 {
     return insn_jal(1, to - from);
 }
 
-unsigned emit_local_var(unsigned init)
+int emit_local_var(int init)
 {
     num_locals = num_locals + 1;
     update_locals(num_locals);
@@ -382,13 +382,13 @@ unsigned emit_local_var(unsigned init)
     return num_locals;
 }
 
-unsigned emit_global_var()
+int emit_global_var()
 {
     num_globals = num_globals + 1;
     return num_globals - 513;
 }
 
-unsigned emit_func_begin(unsigned n)
+int emit_func_begin(int n)
 {
     function_start_pos = code_pos;
     reg_pos = 10;
@@ -428,7 +428,7 @@ void restore_sp()
 
 void emit_return()
 {
-    unsigned prev_insn = get_32bit(buf + code_pos - 4);
+    int prev_insn = get_32bit(buf + code_pos - 4);
 
     if (last_branch_target != code_pos) {
         /* precondition: no if or else branch to the current position */
@@ -443,7 +443,7 @@ void emit_return()
         {
             code_pos = code_pos - 4;
             restore_sp();
-            unsigned disp = extract_jal_disp(prev_insn);
+            int disp = extract_jal_disp(prev_insn);
             emit32(insn_jal(0, disp - 8));
 
             num_calls = num_calls - 1;
@@ -455,11 +455,11 @@ void emit_return()
     emit32(32871);          /* 00008067  RET */
 }
 
-void refactor(unsigned start_pos, unsigned end_pos)
+void refactor(int start_pos, int end_pos)
 {
-    unsigned i = start_pos;
+    int i = start_pos;
     while (i < end_pos) {
-        unsigned insn = get_32bit(buf + i);
+        int insn = get_32bit(buf + i);
         if (insn == 73859) {                  /* 00412083 LW RA,0(SP) */
             /* Next instruction is always
                 00010113  ADD SP, SP, max_locals+1
@@ -470,7 +470,7 @@ void refactor(unsigned start_pos, unsigned end_pos)
             /* adjust target if tail call */
             if ((insn & 4095) == 111) {    /* xxxxx06F  JAL X0, xxxxx*/
                 i = i + 4;
-                unsigned disp = extract_jal_disp(insn) + i - code_pos;
+                int disp = extract_jal_disp(insn) + i - code_pos;
                 emit32(insn_jal(0, disp));
             }
         }
@@ -480,10 +480,10 @@ void refactor(unsigned start_pos, unsigned end_pos)
             /* load or store local variable */
             if (insn & 32) {
                 /* store */
-                unsigned reg_for_var = (((insn >> 9) & 7) + (((insn >> 26) & 63) << 3))
+                int reg_for_var = (((insn >> 9) & 7) + (((insn >> 26) & 63) << 3))
                                         + max_reg_pos;
-                unsigned prev_insn = get_32bit(buf + code_pos - 4);
-                unsigned prev_opcode = prev_insn & 127;
+                int prev_insn = get_32bit(buf + code_pos - 4);
+                int prev_opcode = prev_insn & 127;
 
                 if ((((prev_insn >> 7) & 31) == 10) &
                     ((prev_opcode == 19) |        /* arith with immediate */
@@ -501,10 +501,10 @@ void refactor(unsigned start_pos, unsigned end_pos)
             }
             else {
                 /* load */
-                unsigned reg_for_var = (insn >> 22) + max_reg_pos; /* highest bits are 0 */
-                unsigned next_insn = get_32bit(buf + i + 4);
-                unsigned next_opcode = next_insn & 127;
-                unsigned rd = (insn >> 7) & 31;
+                int reg_for_var = (insn >> 22) + max_reg_pos; /* highest bits are 0 */
+                int next_insn = get_32bit(buf + i + 4);
+                int next_opcode = next_insn & 127;
+                int rd = (insn >> 7) & 31;
 
                 if ((next_insn == 11862051) |   /* 00B50023  SB A1,0(A0) */
                     (next_opcode == 51) |       /* arith with reg */
@@ -536,38 +536,38 @@ void refactor(unsigned start_pos, unsigned end_pos)
     }
 }
 
-void walk_through(unsigned start_pos, unsigned end_pos)
+void walk_through(int start_pos, int end_pos)
 {
-    unsigned branch_pos = start_pos;
+    int branch_pos = start_pos;
 
     /* search next branch */
     while (branch_pos < end_pos) {
-        unsigned insn = get_32bit(buf + branch_pos);
+        int insn = get_32bit(buf + branch_pos);
         branch_pos = branch_pos + 4;
         if ((insn & 127) == 99) { /* & 0x7f) == 0x63  branch*/
-            unsigned branch_target =  ((insn & 128) << 4) +
+            int branch_target =  ((insn & 128) << 4) +
                                       ((insn >> 20) & 2016) +
                                       ((insn >> 7) & 28) +
                                         branch_pos - 4;
             insn = get_32bit(buf + branch_target - 4);
 
             if ((insn & 4095) == 111) { /* JAL X0, */
-                unsigned jump_target = extract_jal_disp(insn) + branch_target - 4;
+                int jump_target = extract_jal_disp(insn) + branch_target - 4;
 
                 if (insn >> 31) { /* jump backward => while loop */
                     refactor(start_pos, jump_target);
-                    unsigned new_loop_pos = code_pos;
+                    int new_loop_pos = code_pos;
                     refactor(jump_target, branch_pos);
-                    unsigned new_exit_pos = code_pos - 4;
+                    int new_exit_pos = code_pos - 4;
                     walk_through(branch_pos, branch_target - 4);
                     emit_jump_and_fix_branch_here(new_loop_pos, new_exit_pos);
                     branch_pos = branch_target;
                 }
                 else { /* jump forward => else branch */
                     refactor(start_pos, branch_pos);
-                    unsigned new_branch_pos = code_pos - 4;
+                    int new_branch_pos = code_pos - 4;
                     walk_through(branch_pos, branch_target - 4);
-                    unsigned new_not_else_pos = code_pos;
+                    int new_not_else_pos = code_pos;
                     emit_jump_and_fix_branch_here(0, new_branch_pos);
                     walk_through(branch_target, jump_target);
                     emit_fix_jump_here(new_not_else_pos);
@@ -576,7 +576,7 @@ void walk_through(unsigned start_pos, unsigned end_pos)
             }
             else {
                 refactor(start_pos, branch_pos);
-                unsigned new_branch_pos = code_pos - 4;
+                int new_branch_pos = code_pos - 4;
                 walk_through(branch_pos, branch_target);
                 emit_fix_branch_here(new_branch_pos);
                 branch_pos = branch_target;
@@ -592,7 +592,7 @@ void emit_func_end()
     emit_return();
 
     if ((num_calls == 0) & ((max_reg_pos + num_locals) < 32)) {
-        unsigned function_end_pos = code_pos;
+        int function_end_pos = code_pos;
         code_pos = function_start_pos;
         walk_through(function_start_pos + 8, function_end_pos);
     }
@@ -600,9 +600,9 @@ void emit_func_end()
         set_32bit(buf + function_start_pos, 4290838803 - (max_locals << 22));
             /* FFC10113  ADD SP, SP, -4*(max_locals+1) */
 
-        unsigned insn = (max_locals << 22) + 4260115;
+        int insn = (max_locals << 22) + 4260115;
             /* 00010113  ADD SP, SP, 4*(max_locals+1) */
-        unsigned next = addsp_list;
+        int next = addsp_list;
         while (next) {
             unsigned char *p = buf + next;
             next = get_32bit(p);
@@ -611,19 +611,19 @@ void emit_func_end()
     }
 }
 
-unsigned emit_scope_begin()
+int emit_scope_begin()
 {
     num_scope = num_scope + 1;
     return num_locals;
 }
 
-void emit_scope_end(unsigned save)
+void emit_scope_end(int save)
 {
     num_locals = save;
     num_scope = num_scope - 1;
 }
 
-unsigned emit_begin()
+int emit_begin()
 {
     code_pos = 0;
     num_globals = 0;
@@ -671,14 +671,14 @@ _start:
         /* return the address of the call to main() as a forward reference */
 }
 
-unsigned emit_end()
+int emit_end()
 {
-    unsigned addr = code_pos + 1964; /* 2048 - 84 */
+    int addr = code_pos + 1964; /* 2048 - 84 */
     set_32bit(buf + 84, (((addr + 2048) >> 12) << 12) + 407);
         /* 00000197  AUIPC GP, hi(addr) */
     set_32bit(buf + 88, (addr << 20) + 98707);
         /* 00018193  ADDI GP, GP, lo(addr) */
-    unsigned i = 0;
+    int i = 0;
     while (i < num_globals) {
         emit32(0);
         i = i + 1;

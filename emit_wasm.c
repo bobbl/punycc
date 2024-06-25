@@ -12,27 +12,27 @@ TODO
 
 
 /* constants */
-unsigned buf_size; /* total size of all buffers */
+int buf_size; /* total size of all buffers */
 
 /* global variables */
 unsigned char *buf;
-unsigned code_pos;
-unsigned stack_pos;
-unsigned num_params;
-unsigned last_insn;
+int code_pos;
+int stack_pos;
+int num_params;
+int last_insn;
     /* Contains the last instruction, but only under special circumstances
        0  = unknown
        15 = return
        26 = drop */
 
-unsigned block_start_pos;
-unsigned func_no;    /* function number of next function */
-unsigned func_start_pos;
-unsigned num_locals;    /* number for next local variable */
+int block_start_pos;
+int func_no;    /* function number of next function */
+int func_start_pos;
+int num_locals;    /* number for next local variable */
 
-unsigned data_pos;      /* end of data section */
-unsigned data_ofs;      /* offset in data memory (not section!) */
-unsigned num_globals;   /* number for next global variable */
+int data_pos;      /* end of data section */
+int data_ofs;      /* offset in data memory (not section!) */
+int num_globals;   /* number for next global variable */
 
 
 /* constants (only referred in comments)
@@ -73,7 +73,7 @@ while:
 
 
 /* helper to write a 32 bit number to a char array */
-void set_32bit(unsigned char *p, unsigned x)
+void set_32bit(unsigned char *p, int x)
 {
     p[0] = x;
     p[1] = x >> 8;
@@ -83,7 +83,7 @@ void set_32bit(unsigned char *p, unsigned x)
 
 
 /* helper to read 32 bit number from a char array */
-unsigned get_32bit(unsigned char *p)
+int get_32bit(unsigned char *p)
 {
     return p[0] +
           (p[1] << 8) +
@@ -92,7 +92,7 @@ unsigned get_32bit(unsigned char *p)
 }
 
 
-void emit(unsigned b)
+void emit(int b)
 {
     buf[code_pos] = b;
     code_pos = code_pos + 1;
@@ -100,9 +100,9 @@ void emit(unsigned b)
 }
 
 
-void emit_n(unsigned n, char *s)
+void emit_n(int n, char *s)
 {
-    unsigned i = 0;
+    int i = 0;
     while (i < n) {
         emit(s[i]);
         i = i + 1;
@@ -110,16 +110,16 @@ void emit_n(unsigned n, char *s)
 }
 
 
-void emit32(unsigned n)
+void emit32(int n)
 {
     code_pos = code_pos + 4;
     set_32bit(buf + code_pos - 4, n);
     last_insn = 0;
 }
 
-void emit_leb(unsigned n)
+void emit_leb(int n)
 {
-    unsigned negative = 0;
+    int negative = 0;
     if (n >> 31) {
         /* large uint32 = negative int32, must be emitted as signed LEB */
         emit(n | 128);
@@ -135,7 +135,7 @@ void emit_leb(unsigned n)
 }
 
 
-void set_leb_fix3(unsigned i, unsigned x)
+void set_leb_fix3(int i, int x)
 {
     buf[i  ] = x       | 128;
     buf[i+1] = (x>>7)  | 128;
@@ -143,7 +143,7 @@ void set_leb_fix3(unsigned i, unsigned x)
 }
 
 
-void emit_leb_fix3(unsigned x)
+void emit_leb_fix3(int x)
 {
     code_pos = code_pos + 3;
     set_leb_fix3(code_pos - 3, x);
@@ -155,7 +155,7 @@ void emit_push()
 }
 
 
-void emit_number(unsigned x)
+void emit_number(int x)
 {
     emit(65);                                   /* 41   i32.const */
     emit_leb(x);
@@ -173,7 +173,7 @@ void end_of_block()
 }
 
 
-void emit_string(unsigned len, char *s)
+void emit_string(int len, char *s)
 {
     /* code to get address */
     emit_number(data_ofs);
@@ -190,7 +190,7 @@ void emit_string(unsigned len, char *s)
 }
 
 
-void emit_store(unsigned global, unsigned ofs)
+void emit_store(int global, int ofs)
 {
     if (global) {
         emit(36);                               /* 24           global.set */
@@ -204,7 +204,7 @@ void emit_store(unsigned global, unsigned ofs)
 }
 
 
-void emit_load(unsigned global, unsigned ofs)
+void emit_load(int global, int ofs)
 {
     if (global) {
         emit(35);                               /* 23           global.get */
@@ -218,7 +218,7 @@ void emit_load(unsigned global, unsigned ofs)
 }
 
 
-void emit_index_push(unsigned which, unsigned ofs)
+void emit_index_push(int which, int ofs)
 {
     emit_load(which, ofs);
     emit(106);                                  /* 6A           i32.add */
@@ -233,14 +233,14 @@ void emit_pop_store_array()
 }
 
 
-void emit_index_load_array(unsigned which, unsigned ofs)
+void emit_index_load_array(int which, int ofs)
 {
     emit_index_push(which, ofs);
     emit(45); emit(0); emit(0);                 /* 2D 00 00     i32.load8_u */
 }
 
 
-void emit_operation(unsigned op)
+void emit_operation(int op)
 {
     /*               <<  >>  -   |   ^   +   &   *   /   %  */
     char *code = " \x74\x75\x6b\x72\x73\x6a\x71\x6c\x6d\x6f";
@@ -251,7 +251,7 @@ void emit_operation(unsigned op)
 }
 
 
-void emit_comp(unsigned op)
+void emit_comp(int op)
 {
     /*              ==  !=  <   >=  >   <=  */
     char *code = "\x46\x47\x48\x4e\x4a\x4c";
@@ -265,7 +265,7 @@ void emit_comp(unsigned op)
 }
 
 
-unsigned emit_pre_while()
+int emit_pre_while()
 {
     emit32(1073889283);                         /* 03 40        loop */
                                                 /* 02 40        block */
@@ -277,7 +277,7 @@ unsigned emit_pre_while()
 }
 
 
-unsigned emit_if(unsigned condition)
+int emit_if(int condition)
 {
     if (condition) {
         emit_comp(condition);
@@ -295,21 +295,21 @@ unsigned emit_if(unsigned condition)
 }
 
 
-void emit_fix_branch_here(unsigned insn_pos)
+void emit_fix_branch_here(int insn_pos)
 {
     /* end of then branch without else */
     emit(11);                                   /* 0B           end */
 }
 
 
-void emit_fix_jump_here(unsigned insn_pos)
+void emit_fix_jump_here(int insn_pos)
 {
     /* end of else branch */
     emit(11);                                   /* 0B           end */
 }
 
 
-unsigned emit_jump_and_fix_branch_here(unsigned destination, unsigned insn_pos)
+int emit_jump_and_fix_branch_here(int destination, int insn_pos)
 {
     /* destination==0: beginning of else branch
        destination!=0: end of while loop */
@@ -334,20 +334,20 @@ unsigned emit_jump_and_fix_branch_here(unsigned destination, unsigned insn_pos)
 }
 
 
-unsigned emit_pre_call()
+int emit_pre_call()
 {
     return 0;
 }
 
 
-void emit_arg(unsigned i)
+void emit_arg(int i)
 {
 }
 
 
-unsigned emit_call(unsigned ofs, unsigned pop, unsigned save)
+int emit_call(int ofs, int pop, int save)
 {
-    unsigned r = code_pos;
+    int r = code_pos;
 
     /* The code must be at least 4 bytes, because if the function is not yet
        defined, the 4 bytes are overwritten by a link. The link is part of the
@@ -360,7 +360,7 @@ unsigned emit_call(unsigned ofs, unsigned pop, unsigned save)
 }
 
 
-unsigned emit_fix_call(unsigned from, unsigned to)
+int emit_fix_call(int from, int to)
 {
     /* Called only at the beginning of the code generation of the function
        where `to` points to. Therefore func_no has the correct value.
@@ -379,7 +379,7 @@ unsigned emit_fix_call(unsigned from, unsigned to)
 }
 
 
-unsigned emit_local_var(unsigned init)
+int emit_local_var(int init)
 {
     num_locals = num_locals + 1;
 
@@ -391,7 +391,7 @@ unsigned emit_local_var(unsigned init)
 }
 
 
-unsigned emit_global_var()
+int emit_global_var()
 {
     num_globals = num_globals + 1;
     return num_globals - 1;
@@ -423,7 +423,7 @@ void emit_return()
 }
 
 
-unsigned emit_binary_func(unsigned n, char *s)
+int emit_binary_func(int n, char *s)
 {
     func_no = func_no + 1;
 
@@ -444,7 +444,7 @@ unsigned emit_binary_func(unsigned n, char *s)
 }
 
 
-unsigned emit_func_begin(unsigned n)
+int emit_func_begin(int n)
 {
     func_no = func_no + 1;
     func_start_pos = code_pos;
@@ -479,15 +479,15 @@ void emit_func_end()
 }
 
 
-unsigned emit_scope_begin()
+int emit_scope_begin()
 {
     return stack_pos;
 }
 
 
-void emit_scope_end(unsigned save)
+void emit_scope_end(int save)
 {
-    unsigned drop = stack_pos - save;
+    int drop = stack_pos - save;
 
     while (drop != 0) {
         emit(26);                               /* 1A   drop */
@@ -498,7 +498,7 @@ void emit_scope_end(unsigned save)
 }
 
 
-unsigned emit_begin()
+int emit_begin()
 {
     code_pos            = 0;
     block_start_pos     = 0;
@@ -521,26 +521,26 @@ unsigned emit_begin()
 }
 
 
-unsigned emit_end()
+int emit_end()
 {
     /* go backwards through the immediate code */
-    unsigned func_section_begin = buf_size - func_no + 2;
-    unsigned data_section_begin = func_section_begin - data_ofs + 16;
+    int func_section_begin = buf_size - func_no + 2;
+    int data_section_begin = func_section_begin - data_ofs + 16;
         /* 16 = LIB_DATA_SIZE */
 
-    unsigned func_section_pos = buf_size;
-    unsigned data_section_pos = func_section_begin;
-    unsigned code_section_pos = data_section_begin;
+    int func_section_pos = buf_size;
+    int data_section_pos = func_section_begin;
+    int code_section_pos = data_section_begin;
 
 
-    unsigned func_end_pos = code_section_pos;
+    int func_end_pos = code_section_pos;
     code_section_pos = code_section_pos - 1;
     buf[code_section_pos] = 11; /* end bytecode at end of function */
 
-    unsigned i = code_pos;
+    int i = code_pos;
     while (i) {
-        unsigned len = get_32bit(buf + i - 4);
-        unsigned blocktype = buf[i-5];
+        int len = get_32bit(buf + i - 4);
+        int blocktype = buf[i-5];
         i = i - len - 4;
         len = len - 1;
 
@@ -623,7 +623,7 @@ unsigned emit_end()
     00A2 03                             function section
 */
 
-    unsigned len = func_no - 2; /* 2 = NUM_IMPORTED_FUNCTIONS - 1 */
+    int len = func_no - 2; /* 2 = NUM_IMPORTED_FUNCTIONS - 1 */
     emit_leb(len+3); /* bytes */
     emit_leb_fix3(len); /*entries */
     emit_n(buf_size - func_section_begin, (char *)buf + func_section_begin);

@@ -45,16 +45,16 @@ Token
  **********************************************************************/
 
 int ch;
-unsigned lineno;
-unsigned token;
-unsigned token_int;
-unsigned token_size;
+int lineno;
+int token;
+int token_int;
+int token_size;
 char *token_buf;
-unsigned syms_head;
+int syms_head;
 
-void itoa4(unsigned x)
+void itoa4(int x)
 {
-    unsigned i = x * 134218; /* x = x * (((1<<27)/1000) + 1) */
+    int i = x * 134218; /* x = x * (((1<<27)/1000) + 1) */
     char *s = (char *)buf + syms_head - 16;
     s[0] = (i>>27) + '0';
     i = (i & 134217727) * 5;  /* 0x07FFFFFF */
@@ -66,7 +66,7 @@ void itoa4(unsigned x)
     write(2, s, 4);
 }
 
-void error(unsigned no)
+void error(int no)
 {
     write(2, "Error ", 6);
     itoa4(no);
@@ -76,9 +76,9 @@ void error(unsigned no)
     exit(no);
 }
 
-int token_cmp(char *s, unsigned n)
+int token_cmp(char *s, int n)
 {
-    unsigned i = 0;
+    int i = 0;
     while (s[i] == token_buf[i]) {
         i = i + 1;
         if (i == n) {
@@ -88,7 +88,7 @@ int token_cmp(char *s, unsigned n)
     return 0;
 }
 
-unsigned next_char()
+int next_char()
 {
     ch = getchar();
     if (ch == 10) {
@@ -109,9 +109,9 @@ void store_char()
 
 void get_token()
 {
-    unsigned i;
-    unsigned j;
-    unsigned len;
+    int i;
+    int j;
+    int len;
 
     char *classify_char = "                                 !\x22  \x0a\x07\x27()\x08\x06,\x03 \x09^^^^^^^^^^ ;\x12=\x14  __________________________[ ]\x05_ __________________________{\x04}  ";
     char *keywords = "2if4else5while6return7_Pragma4void4char3int8unsigned4long0";
@@ -251,14 +251,14 @@ void get_token()
  **********************************************************************/
 
 
-unsigned sym_lookup()
+int sym_lookup()
 {
     if (token != '_') {
         error(103); /* Error: identifier expected */
     }
-    unsigned s = syms_head;
+    int s = syms_head;
     while (s < buf_size) {
-        unsigned len = buf[s + 5];
+        int len = buf[s + 5];
         if (len == token_int) {
             if (token_cmp((char *)buf + s + 6, token_int)) {
                 return s;
@@ -269,9 +269,9 @@ unsigned sym_lookup()
     return 0;
 }
 
-void sym_append(unsigned addr, unsigned type)
+void sym_append(int addr, int type)
 {
-    unsigned i = token_int;
+    int i = token_int;
     syms_head = syms_head - token_int - 6;
     unsigned char *s = buf + syms_head;
 
@@ -288,11 +288,11 @@ void sym_append(unsigned addr, unsigned type)
 }
 
 
-void sym_fix(unsigned sym, unsigned func_pos)
+void sym_fix(int sym, int func_pos)
 {
     unsigned char *s = buf + sym;
-    unsigned i = get_32bit(buf + sym);
-    unsigned next;
+    int i = get_32bit(buf + sym);
+    int next;
 
     if (s[4] != 72) {
         error(105); /* Error: function redefined */
@@ -315,7 +315,7 @@ void sym_fix(unsigned sym, unsigned func_pos)
  * Parser
  **********************************************************************/
 
-unsigned accept(unsigned ch)
+int accept(int ch)
 /* parameter named `ch` to check if name scopes work */
 {
     if (token == ch) {
@@ -325,14 +325,14 @@ unsigned accept(unsigned ch)
     return 0;
 }
 
-void expect(unsigned t)
+void expect(int t)
 {
     if (accept(t) == 0) {
         error(102); /* Error: specific token expected */
     }
 }
 
-unsigned accept_type_id()
+int accept_type_id()
 {
     if (token < 101) {
         return 0;
@@ -344,7 +344,7 @@ unsigned accept_type_id()
     return 1;
 }
 
-unsigned accept_type()
+int accept_type()
 {
     if (accept_type_id()) {
         while (accept_type_id()) {}
@@ -371,7 +371,7 @@ void parse_operation()
     parse_factor();
     while (token < 16) {
         emit_push();
-        unsigned op = token;
+        int op = token;
         get_token();
         parse_factor();
         emit_operation(op);
@@ -386,7 +386,7 @@ void parse_expression()
     parse_operation();
     if ((token & 240) == 16) { /* (token & 0xF0) == 0x10 */
         emit_push();
-        unsigned op = token;
+        int op = token;
         get_token();
         parse_operation();
         emit_comp(op);
@@ -395,9 +395,9 @@ void parse_expression()
 
 /* condition = "(" , operation , [ cmp_op , operation ] , ")" ;
  */
-unsigned parse_condition()
+int parse_condition()
 {
-    unsigned cond = 0;
+    int cond = 0;
     expect('(');
     parse_operation();
     if ((token & 240) == 16) { /* (token & 0xF0) == 0x10 */
@@ -420,9 +420,9 @@ unsigned parse_condition()
  */
 void parse_factor()
 {
-    unsigned sym;
-    unsigned type;
-    unsigned ofs;
+    int sym;
+    int type;
+    int ofs;
 
     while (token == '(') { /* '(' */
         get_token();
@@ -459,8 +459,8 @@ void parse_factor()
 
         if ((type | 1) == 73) { /* type 72 or 73: function */
             expect('(');
-            unsigned argno = 0;
-            unsigned save = emit_pre_call();
+            int argno = 0;
+            int save = emit_pre_call();
             if (accept(')') == 0) {
                 parse_expression();
                 emit_arg(0);
@@ -472,7 +472,7 @@ void parse_factor()
                 }
                 expect(')');
             }
-            unsigned link = emit_call(ofs, argno, save);
+            int link = emit_call(ofs, argno, save);
             if (type == 72) {
                 set_32bit(buf + link, ofs); 
                     /* overwrite the call to an undefined address with a link
@@ -514,8 +514,8 @@ void parse_factor()
  */
 void parse_statement()
 {
-    unsigned h;
-    unsigned s;
+    int h;
+    int s;
 
     if (accept('{')) {
         h = syms_head;
@@ -573,12 +573,12 @@ void parse_statement()
  * body     = statement | ";" ;
  * function = type , identifier , "(" , params ,  ")" , body ;
  */
-void parse_function(unsigned sym)
+void parse_function(int sym)
 {
     expect('(');
-    unsigned restore_head = syms_head;
+    int restore_head = syms_head;
 
-    unsigned n = 0;
+    int n = 0;
     while (accept(')') == 0) {
         n = n + 1;
         expect_type();
@@ -616,7 +616,7 @@ void parse_program()
 {
     while (token) {
         expect_type();
-        unsigned sym = sym_lookup();
+        int sym = sym_lookup();
         if (sym) { 
             get_token();
             parse_function(sym);
