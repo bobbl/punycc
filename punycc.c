@@ -44,17 +44,18 @@ Token
  * Scanner
  **********************************************************************/
 
-unsigned ch;
-unsigned lineno;
-unsigned token;
-unsigned token_int;
-unsigned token_size;
+unsigned int ch;
+unsigned int ch_class;
+unsigned int lineno;
+unsigned int token;
+unsigned int token_int;
+unsigned int token_size;
 char *token_buf;
-unsigned syms_head;
+unsigned int syms_head;
 
-void itoa4(unsigned x)
+void itoa4(unsigned int x)
 {
-    unsigned i = x * 134218; /* x = x * (((1<<27)/1000) + 1) */
+    unsigned int i = x * 134218; /* x = x * (((1<<27)/1000) + 1) */
     char *s = (char *)buf + syms_head - 16;
     s[0] = (i>>27) + '0';
     i = (i & 134217727) * 5;  /* 0x07FFFFFF */
@@ -66,7 +67,7 @@ void itoa4(unsigned x)
     write(2, s, 4);
 }
 
-void error(unsigned no)
+void error(unsigned int no)
 {
     write(2, "Error ", 6);
     itoa4(no);
@@ -76,9 +77,9 @@ void error(unsigned no)
     exit(no);
 }
 
-int token_cmp(char *s, unsigned n)
+int token_cmp(char *s, unsigned int n)
 {
-    unsigned i = 0;
+    unsigned int i = 0;
     while (s[i] == token_buf[i]) {
         i = i + 1;
         if (i == n) {
@@ -88,11 +89,17 @@ int token_cmp(char *s, unsigned n)
     return 0;
 }
 
-unsigned next_char()
+unsigned int next_char()
 {
+    char  *classify  = " !\x22  \x0a\x07\x27()\x08\x06,\x03 \x09^^^^^^^^^^ ;\x12=\x14  __________________________[ ]\x05_ __________________________{\x04}  ";
+
     ch = getchar();
     if (ch == 10) {
         lineno = lineno + 1;
+    }
+    ch_class = ' ';
+    if ((ch - 32) < 96) {
+        ch_class = classify[ch - 32];
     }
     return ch;
 }
@@ -109,11 +116,10 @@ void store_char()
 
 void get_token()
 {
-    unsigned i;
-    unsigned j;
-    unsigned len;
+    unsigned int i;
+    unsigned int j;
+    unsigned int len;
 
-    char  *first_map  = " !\x22  \x0a\x07\x27()\x08\x06,\x03 \x09^^^^^^^^^^ ;\x12=\x14  __________________________[ ]\x05_ __________________________{\x04}  ";
 
     token_size = syms_head - code_pos;
     if (token_size < 1024) {
@@ -143,10 +149,7 @@ void get_token()
         return;
     }
 
-    if ((ch - 32) >= 96) {
-        error(101); /* Error: invalid character */
-    }
-    token = first_map[ch - 32]; /* mask signed char */
+    token = ch_class;
     if (token == ' ') {
         error(101); /* Error: invalid character */
     }
@@ -182,14 +185,9 @@ void get_token()
     else if (token == '_') { /* identifier */
 
         /* store identifier in space between code and symbol table */
-        j = 1;
-        while (j) {
+        ch_class = 94;
+        while ((ch_class & 254) == 94) { /* ==94 if  '^' or '_' */
             store_char();
-            if ((ch - 32) < 96) {
-                j = ((first_map[ch - 32] & 254) == 94); /* '^' or '_' */
-            } else {
-                j = 0;
-            }
         }
         token_buf[token_int] = 0;
 
@@ -257,14 +255,14 @@ void get_token()
  **********************************************************************/
 
 
-unsigned sym_lookup()
+unsigned int sym_lookup()
 {
     if (token != '_') {
         error(103); /* Error: identifier expected */
     }
-    unsigned s = syms_head;
+    unsigned int s = syms_head;
     while (s < buf_size) {
-        unsigned len = buf[s + 5];
+        unsigned int len = buf[s + 5];
         if (len == token_int) {
             if (token_cmp((char *)buf + s + 6, token_int)) {
                 return s;
@@ -275,9 +273,9 @@ unsigned sym_lookup()
     return 0;
 }
 
-void sym_append(unsigned addr, unsigned type)
+void sym_append(unsigned int addr, unsigned int type)
 {
-    unsigned i = token_int;
+    unsigned int i = token_int;
     syms_head = syms_head - token_int - 6;
     unsigned char *s = buf + syms_head;
 
@@ -294,11 +292,11 @@ void sym_append(unsigned addr, unsigned type)
 }
 
 
-void sym_fix(unsigned sym, unsigned func_pos)
+void sym_fix(unsigned int sym, unsigned int func_pos)
 {
     unsigned char *s = buf + sym;
-    unsigned i = get_32bit(buf + sym);
-    unsigned next;
+    unsigned int i = get_32bit(buf + sym);
+    unsigned int next;
 
     if (s[4] != 72) {
         error(105); /* Error: function redefined */
@@ -321,7 +319,7 @@ void sym_fix(unsigned sym, unsigned func_pos)
  * Parser
  **********************************************************************/
 
-unsigned accept(unsigned ch)
+unsigned int accept(unsigned int ch)
 /* parameter named `ch` to check if name scopes work */
 {
     if (token == ch) {
@@ -331,14 +329,14 @@ unsigned accept(unsigned ch)
     return 0;
 }
 
-void expect(unsigned t)
+void expect(unsigned int t)
 {
     if (accept(t) == 0) {
         error(102); /* Error: specific token expected */
     }
 }
 
-unsigned accept_type_id()
+unsigned int accept_type_id()
 {
     if (token < 101) {
         return 0;
@@ -350,7 +348,7 @@ unsigned accept_type_id()
     return 1;
 }
 
-unsigned accept_type()
+unsigned int accept_type()
 {
     if (accept_type_id()) {
         while (accept_type_id()) {}
@@ -377,7 +375,7 @@ void parse_operation()
     parse_factor();
     while (token < 16) {
         emit_push();
-        unsigned op = token;
+        unsigned int op = token;
         get_token();
         parse_factor();
         emit_operation(op);
@@ -392,7 +390,7 @@ void parse_expression()
     parse_operation();
     if ((token & 240) == 16) { /* (token & 0xF0) == 0x10 */
         emit_push();
-        unsigned op = token;
+        unsigned int op = token;
         get_token();
         parse_operation();
         emit_comp(op);
@@ -401,9 +399,9 @@ void parse_expression()
 
 /* condition = "(" , operation , [ cmp_op , operation ] , ")" ;
  */
-unsigned parse_condition()
+unsigned int parse_condition()
 {
-    unsigned cond = 0;
+    unsigned int cond = 0;
     expect('(');
     parse_operation();
     if ((token & 240) == 16) { /* (token & 0xF0) == 0x10 */
@@ -426,9 +424,9 @@ unsigned parse_condition()
  */
 void parse_factor()
 {
-    unsigned sym;
-    unsigned type;
-    unsigned ofs;
+    unsigned int sym;
+    unsigned int type;
+    unsigned int ofs;
 
     while (token == '(') { /* '(' */
         get_token();
@@ -463,10 +461,10 @@ void parse_factor()
         ofs = get_32bit(buf + sym);
         get_token();
 
-        if ((type | 1) == 73) { /* type 72 or 72: function */
+        if ((type | 1) == 73) { /* type 72 or 73: function */
             expect('(');
-            unsigned argno = 0;
-            unsigned save = emit_pre_call();
+            unsigned int argno = 0;
+            unsigned int save = emit_pre_call();
             if (accept(')') == 0) {
                 parse_expression();
                 emit_arg(0);
@@ -478,7 +476,7 @@ void parse_factor()
                 }
                 expect(')');
             }
-            unsigned link = emit_call(ofs, argno, save);
+            unsigned int link = emit_call(ofs, argno, save);
             if (type == 72) {
                 set_32bit(buf + link, ofs); 
                     /* overwrite the call to an undefined address with a link
@@ -520,8 +518,8 @@ void parse_factor()
  */
 void parse_statement()
 {
-    unsigned h;
-    unsigned s;
+    unsigned int h;
+    unsigned int s;
 
     if (accept('{')) {
         h = syms_head;
@@ -579,12 +577,12 @@ void parse_statement()
  * body     = statement | ";" ;
  * function = type , identifier , "(" , params ,  ")" , body ;
  */
-void parse_function(unsigned sym)
+void parse_function(unsigned int sym)
 {
     expect('(');
-    unsigned restore_head = syms_head;
+    unsigned int restore_head = syms_head;
 
-    unsigned n = 0;
+    unsigned int n = 0;
     while (accept(')') == 0) {
         n = n + 1;
         expect_type();
@@ -622,7 +620,7 @@ void parse_program()
 {
     while (token) {
         expect_type();
-        unsigned sym = sym_lookup();
+        unsigned int sym = sym_lookup();
         if (sym) { 
             get_token();
             parse_function(sym);
