@@ -91,15 +91,19 @@ int token_cmp(char *s, unsigned int n)
 
 unsigned int next_char()
 {
-    char  *classify  = " !\x22  \x0a\x07\x27()\x08\x06,\x03 \x09^^^^^^^^^^ ;\x12=\x14  __________________________[ ]\x05_ __________________________{\x04}  ";
-
+    char  *classify  = "         WW  W                  W!\x22  \x0a\x07\x27()\x08\x06,\x03 W^^^^^^^^^^ ;\x12=\x14  __________________________[ ]\x05_ __________________________{\x04}  ";
+        /*              01234567890123456789012345678901234567890123456789 
+         W = whitespace (9, 10, ' ', '/')
+         ^ = digit [0123456789]
+         _ = letter or underscore
+        */
     ch = getchar();
     if (ch == 10) {
         lineno = lineno + 1;
     }
     ch_class = ' ';
-    if ((ch - 32) < 96) {
-        ch_class = classify[ch - 32];
+    if (ch < 128) {
+        ch_class = classify[ch];
     }
     return ch;
 }
@@ -117,9 +121,7 @@ void store_char()
 void get_token()
 {
     unsigned int i;
-    unsigned int j;
     unsigned int len;
-
 
     token_size = syms_head - code_pos;
     if (token_size < 1024) {
@@ -130,8 +132,7 @@ void get_token()
     token_int = 0;
     token = 0;
 
-    while ((ch == ' ') | (ch == 9) | (ch == 10) | (ch == '/'))
-    {
+    while (ch_class == 'W') { /* ch = 9,10,13,' ','/' */
         if (ch == '/') {
             if (next_char() != '*') {
                 token = 9; /* 9 '/' */
@@ -145,15 +146,15 @@ void get_token()
         }
         next_char();
     }
+
     if (ch > 255) {
         return;
     }
-
-    token = ch_class;
-    if (token == ' ') {
+    if (ch_class == ' ') {
         error(101); /* Error: invalid character */
     }
 
+    token = ch_class;
     if (ch == 39) {                  /* ' */
         token = 94; /* '^' number */
         token_int = next_char();
@@ -167,9 +168,9 @@ void get_token()
                 if (next_char() == 'x') {
                     i = next_char() - 48; /* 0 */
                     if (i > 9) { i = i - 39; }
-                    j = next_char() - 48; /* 0 */
-                    if (j > 9) { j = j - 39; }
-                    ch = (i << 4) + j;
+                    len = next_char() - 48; /* 0 */
+                    if (len > 9) { len = len - 39; }
+                    ch = (i << 4) + len;
                 }
             }
             store_char();
@@ -177,15 +178,15 @@ void get_token()
         next_char();
     }
     else if (token == '^') { /* number */
-        while ((ch >= '0') & (ch <= '9')) {
+        while (ch_class == '^') { /* 0-9 */
             token_int = (10 * token_int) + ch - 48; /* '0' */
             next_char();
         }
     }
     else if (token == '_') { /* identifier */
+        /* ch_class == token == 95 at this point */
 
         /* store identifier in space between code and symbol table */
-        ch_class = 94;
         while ((ch_class & 254) == 94) { /* ==94 if  '^' or '_' */
             store_char();
         }
