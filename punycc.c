@@ -197,9 +197,9 @@ void get_token()
         i = 0;
         len = 2;
         token = 96;
-        while (len) {
+        while (len != 0) {
             if (len == token_int) {
-                if (token_cmp(keywords + i + 1, token_int)) {
+                if (token_cmp(keywords + i + 1, token_int) != 0) {
                     return;
                 }
             }
@@ -265,7 +265,7 @@ unsigned int sym_lookup()
     while (s < buf_size) {
         unsigned int len = buf[s + 5];
         if (len == token_int) {
-            if (token_cmp((char *)buf + s + 6, token_int)) {
+            if (token_cmp((char *)buf + s + 6, token_int) != 0) {
                 return s;
             }
         }
@@ -351,9 +351,9 @@ unsigned int accept_type_id()
 
 unsigned int accept_type()
 {
-    if (accept_type_id()) {
-        while (accept_type_id()) {}
-        while (accept(8)) {} /* multiple * */
+    if (accept_type_id() != 0) {
+        while (accept_type_id() != 0) {}
+        while (accept(8) != 0) {} /* multiple * */
         return 1;
     }
     return 0;
@@ -391,7 +391,7 @@ void parse_expression()
     parse_operation();
     if ((token & 240) == 16) { /* (token & 0xF0) == 0x10 */
         emit_push();
-        unsigned int op = token;
+        unsigned int op = token & 15;
         get_token();
         parse_operation();
         emit_comp(op);
@@ -402,14 +402,19 @@ void parse_expression()
  */
 unsigned int parse_condition()
 {
-    unsigned int cond = 0;
+    unsigned int cond = 1;
     expect('(');
     parse_operation();
+    emit_push();
     if ((token & 240) == 16) { /* (token & 0xF0) == 0x10 */
-        emit_push();
-        cond = token;
+        cond = token & 15;
         get_token();
         parse_operation();
+    }
+
+    /* implicit "!= 0" for compatibility with cc500 */
+    else {
+        emit_number(0);
     }
     expect(')');
     return emit_if(cond);
@@ -470,7 +475,7 @@ void parse_factor()
                 parse_expression();
                 emit_arg(0);
                 argno = argno + 1;
-                while (accept(',')) {
+                while (accept(',') != 0) {
                     parse_expression();
                     emit_arg(argno);
                     argno = argno + 1;
@@ -486,10 +491,10 @@ void parse_factor()
                 set_32bit(buf + sym, link);
             }
         }
-        else if (accept('[')) { /* array */
+        else if (accept('[') != 0) { /* array */
             parse_expression();
             expect(']');
-            if (accept('=')) {
+            if (accept('=') != 0) {
                 emit_index_push(type & 1, ofs);
                 parse_expression();
                 emit_pop_store_array();
@@ -499,7 +504,7 @@ void parse_factor()
             }
         }
         else { /* variable */
-            if (accept('=')) {
+            if (accept('=') != 0) {
                 parse_expression();
                 emit_store(type & 1, ofs);
             }
@@ -522,7 +527,7 @@ void parse_statement()
     unsigned int h;
     unsigned int s;
 
-    if (accept('{')) {
+    if (accept('{') != 0) {
         h = syms_head;
         s = emit_scope_begin();
         while (accept('}') == 0) {
@@ -531,10 +536,10 @@ void parse_statement()
         emit_scope_end(s);
         syms_head = h;
     }
-    else if (accept(96)) { /* if */
+    else if (accept(96) != 0) { /* if */
         h = parse_condition();
         parse_statement();
-        if (accept(97)) { /* else */
+        if (accept(97) != 0) { /* else */
             s = emit_jump_and_fix_branch_here(0, h);
             parse_statement();
             emit_fix_jump_here(s);
@@ -543,23 +548,23 @@ void parse_statement()
             emit_fix_branch_here(h);
         }
     }
-    else if (accept(98)) { /* while */
+    else if (accept(98) != 0) { /* while */
         h = emit_pre_while();
         s = parse_condition();
         parse_statement();
         emit_jump_and_fix_branch_here(h, s);
     }
-    else if (accept(99)) { /* return */
+    else if (accept(99) != 0) { /* return */
         if (accept(';') == 0) {
             parse_expression();
             expect(';');
         }
         emit_return();
     }
-    else if (accept_type()) { /* variable declaration */
+    else if (accept_type() != 0) { /* variable declaration */
         sym_append(0 /* don't care */, 74); /* local variable */
         s = 0;
-        if (accept('=')) {
+        if (accept('=') != 0) {
             parse_expression();
             s = 1;
         }
@@ -593,11 +598,11 @@ void parse_function(unsigned int sym)
         accept(','); /* ignore trailing comma */
     }
 
-    if (accept(100)) { /* _Pragma */
+    if (accept(100) != 0) { /* _Pragma */
         expect('(');
         while (token != ')') {
             if (token == '"') {
-                if (token_cmp("PunyC emit ", 11)) {
+                if (token_cmp("PunyC emit ", 11) != 0) {
                     sym_fix(sym, emit_binary_func(token_int-11, token_buf+11));
                 }
             }
@@ -619,16 +624,16 @@ void parse_function(unsigned int sym)
  */
 void parse_program()
 {
-    while (token) {
+    while (token != 0) {
         expect_type();
         unsigned int sym = sym_lookup();
-        if (sym) { 
+        if (sym != 0) { 
             get_token();
             parse_function(sym);
         }
         else { /* unknown identifier */
             sym_append(0, 72); /* undefined function */
-            if (accept(';')) {
+            if (accept(';') != 0) {
                 set_32bit(buf + syms_head, emit_global_var());
                 buf[syms_head + 4] = 71; /* global variable */
             }

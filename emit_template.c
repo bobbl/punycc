@@ -123,7 +123,7 @@ void emit_index_load_array(unsigned int global, unsigned int ofs);
 /* Pop one value from the stack.
    Combine it with the accumulator and store the result in the accumulator.
 
-   operations
+   operation
       1  <<  shift left
       2  >>  shift right
       3  -   subtract
@@ -135,21 +135,21 @@ void emit_index_load_array(unsigned int global, unsigned int ofs);
       9  /   divide
      10  %   modulo
 */
-void emit_operation(unsigned int op);
+void emit_operation(unsigned int operation);
 
 
 /* Pop one value from the stack and compare it with the accumulator.
    Store 1 in the accumulator if the comparison is true, otherwise 0.
 
-   condition
-     16  tos == accu
-     17  tos != accu
-     18  tos <  accu
-     19  tos >= accu
-     20  tos >  accu
-     21  tos <= accu
+   condition (same as in emit_if()
+     0  tos == accu
+     1  tos != accu
+     2  tos <  accu
+     3  tos >= accu
+     4  tos >  accu
+     5  tos <= accu
 */
-void emit_comp(unsigned int op);
+void emit_comp(unsigned int condition);
 
 
 
@@ -171,14 +171,13 @@ unsigned int emit_pre_while()
 /* Emit code for a branch if condition is NOT true.
    Return address where the branch target address will be written later.
 
-   condition
-      0  accu == 0
-     16  tos == accu
-     17  tos != accu
-     18  tos <  accu
-     19  tos >= accu
-     20  tos >  accu
-     21  tos <= accu
+   condition (same as in emit_comp()
+     0  tos == accu
+     1  tos != accu
+     2  tos <  accu
+     3  tos >= accu
+     4  tos >  accu
+     5  tos <= accu
 */
 unsigned int emit_if(unsigned int condition);
 

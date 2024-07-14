@@ -60,16 +60,21 @@ void emit32(unsigned int n)
     emit(n >> 24);
 }
 
+void emiti(char *s, unsigned int i)
+{
+    emit(s[i]);
+}
+
 void emit_pop(unsigned int n)
 {
-    if (n) {
+    if (n != 0) {
         emit(n); emit(176);             /* nn B0   ADD SP, 4*n */
     }
 }
 
 void empty_immpool()
 {
-    if (code_pos & 2) { /* align to 4 bytes */
+    if ((code_pos & 2) != 0) { /* align to 4 bytes */
         emit16(0);
     }
     if (code_pos > (immpos_base + 1020)) {
@@ -113,7 +118,7 @@ void immpool_ref(unsigned int ip)
 
 void check_immpool()
 {
-    if (immpool_pos) {
+    if (immpool_pos != 0) {
         if (code_pos >= (immpos_base + 980)) {
             /* 1024 - 980 = 44 => circa 20 instructions before the pool is too
                far away from the first reference */
@@ -156,7 +161,7 @@ void e_imm(unsigned int reg, unsigned int imm)
 
 void access_var(unsigned int global, unsigned int ofs, unsigned int store, unsigned int index)
 {
-    if (global) {
+    if (global != 0) {
         e_imm(1, ofs);
         emit(index); emit(store);
     }
@@ -311,11 +316,9 @@ void emit_index_load_array(unsigned int which, unsigned int ofs)
 
 void emit_operation(unsigned int op)
 {
-    char *code1 = " \x81\xc1\x08\x08\x48\x08\x08\x48";
     char *code2 = " \x40\x40\x1a\x43\x40\x44\x40\x43";
-    char *code3 = " \x88\xc8\x40\x08\x48\x08\x08\x48";
 
-    if (swap_or_pop()) {
+    if (swap_or_pop() != 0) {
         if (buf[code_pos - 1] == 33) {
             /* optimization for 8 bit immm */
             if (op < 3) { /* LSL or LSR */
@@ -334,8 +337,8 @@ void emit_operation(unsigned int op)
             }
         }
         /* emit alternate code for non-commutative ops */
-        emit(code3[op]);
-        emit(code2[op]);
+        emiti(" \x88\xc8\x40\x08\x48\x08\x08\x48", op);
+        emiti(code2, op);
             /* 88 40   LSLS R0, R1          <<  op=1 */
             /* C8 40   LSRS R0, R1          >>  op=2 */
             /* 40 1A   SUBS R0, R0, R1      -   op=3 */
@@ -343,8 +346,8 @@ void emit_operation(unsigned int op)
                (R0 and R1 are interchangeable */
     }
     else {
-        emit(code1[op]);
-        emit(code2[op]);
+        emiti(" \x81\xc1\x08\x08\x48\x08\x08\x48", op);
+        emiti(code2, op);
             /* 81 40   LSLS R1, R0          <<*/
             /* C1 40   LSRS R1, R0          >>*/
             /* 08 1A   SUBS R0, R1, R0      - */
@@ -361,10 +364,10 @@ void emit_operation(unsigned int op)
     }
 }
 
-void emit_comp(unsigned int op)
+void emit_comp(unsigned int condition)
 {
     unsigned int swap = swap_or_pop();
-    if (op <= 17) {
+    if (condition <= 1) {
         if (buf[code_pos - 1] == 33) {  /* ?? 21   MOVS R1, #imm */
             buf[code_pos - 1] = 56;     /* ?? 38   SUBS R0, #imm */
         }
@@ -373,19 +376,21 @@ void emit_comp(unsigned int op)
         }
 
         emit16(16961);                  /* 41 42   RSBS R1, R0, #0 */
-        emit16((op << 6) + 15688);
-            /* op=16  ==  emit16(16712);   48 41   ADCS R0, R1 */
-            /* op=17  !=  emit16(16776);   88 41   SBCS R0, R1 */
+        emit16((condition << 6) + 16712);
+            /* 1 ==  emit16(16712);        48 41   ADCS R0, R1 */
+            /* 2 !=  emit16(16776);        88 41   SBCS R0, R1 */
 
     }
     else {
-        if (op <= 19) swap = swap ^ 7;
+        if (condition <= 3) {
+            swap = swap ^ 7;
+        }
 
         swap = 17032 - swap;
             /* no swap  emit16(17032);     88 42   CMP R0, R1 */
             /* swap     emit16(17025);     81 42   CMP R1, R0 */
 
-        if (op & 1) {
+        if ((condition & 1) != 0) {
             emit16(8704);               /* 00 22   MOVS R2, #0 */
             emit16(swap);
             emit32(1065298);            /* 52 41   ADCS R2, R2 */
@@ -406,31 +411,22 @@ unsigned int emit_pre_while()
 
 unsigned int emit_if(unsigned int condition)
 {
-    if (condition) {
-        if (swap_or_pop()) {
-            if (buf[code_pos - 1] == 33) {
-                buf[code_pos - 1] = 40; /* ?? 28   CMP R0, #imm */
-            }
-            else {
-                emit16(17032);          /* 88 42   CMP R0, R1 */
-            }
+    if (swap_or_pop() != 0) {
+        if (buf[code_pos - 1] == 33) {
+            buf[code_pos - 1] = 40; /* ?? 28   CMP R0, #imm */
         }
         else {
-            emit16(17025);              /* 81 42   CMP R1, R0 */
+            emit16(17032);          /* 88 42   CMP R0, R1 */
         }
-        emit(0);
-
-        /* branch over next instruction which is the real jump */
-        char *bcc = "\xd0\xd1\xd3\xd2\xd8\xd9";
-        emit(bcc[condition - 16]);
-        /* pure arithmetic alternative:
-            emit((((op >> 1) & 1) ^ op) + (op & 4) + 192);
-        */
     }
     else {
-        emit32(3506448384);             /* 00 28   CMP R0, #0 */
-                                        /* 00 D1   BNE $+4 */
+        emit16(17025);              /* 81 42   CMP R1, R0 */
     }
+
+    /* branch over next instruction which is the real jump */
+    emit(0);
+    emiti("\xd0\xd1\xd3\xd2\xd8\xd9", condition);
+
     emit16(0); /* don't care, will be fixed later to a jump */
     return code_pos - 2;
 }
@@ -487,7 +483,7 @@ unsigned int emit_local_var(unsigned int init)
 
 unsigned int emit_global_var()
 {
-    if (code_pos & 2) {
+    if ((code_pos & 2) != 0) {
         emit16(0); /* align if necessary */
     }
     emit32(0);
@@ -499,7 +495,7 @@ void emit_return()
 {
     emit_pop(stack_pos);
     emit16(48384);                              /* 00 BD   POP {PC} */
-    if (immpool_pos) {
+    if (immpool_pos != 0) {
         empty_immpool();
     }
 }

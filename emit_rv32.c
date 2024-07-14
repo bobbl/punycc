@@ -113,7 +113,7 @@ void emit_number(unsigned int imm)
     else {
         emit32((((imm + 2048) >> 12) << 12) + (reg_pos << 7) + 55);
                 /* 00000037  LUI REG[reg_pos], imm */
-        if ((imm << 20)) {
+        if ((imm << 20) != 0) {
             emit_isdo(imm, reg_pos, reg_pos, 19);
                 /* 00000013  ADDI REG[reg_pos], REG[reg_pos], imm */
         }
@@ -214,11 +214,11 @@ void emit_operation(unsigned int t)
     emit_isdo(reg_pos, reg_pos, reg_pos, get_32bit((unsigned char *)code_arith + (t<<2)));
 }
 
-void emit_comp(unsigned int t)
+void emit_comp(unsigned int condition)
 {
     reg_pos = reg_pos - 1;
 
-    if (t < 18) {
+    if (condition < 2) {
         if ((last_insn & 4294963327) == 19) {
             /* 0xFFFFF07F optimization if compared with 0 */
             code_pos = code_pos - 4;
@@ -227,19 +227,25 @@ void emit_comp(unsigned int t)
             emit_isdo(reg_pos, reg_pos, reg_pos, 1074790451);
                 /* sub REG, REG, REG+1 */
         }
-        if (t == 16) emit_isdo(0, reg_pos, reg_pos, 1060883);
-            /* sltiu REG, REG, 1        == */
-        else emit_isdo(reg_pos, 0, reg_pos, 12339);
-            /* sltu REG, x0, REG        != */
+        if (condition == 0) {
+            emit_isdo(0, reg_pos, reg_pos, 1060883);
+                /* sltiu REG, REG, 1        == */
+        }
+        else {
+            emit_isdo(reg_pos, 0, reg_pos, 12339);
+                /* sltu REG, x0, REG        != */
+        }
     }
     else {
         unsigned int o = 45107;
             /* 0000B033  sltu REG, REG+1, REG     > or <= */
-        if (t < 20) o = 1060915;
+        if (condition < 4) o = 1060915;
             /* 00103033  sltu REG, REG, REG+1     < or >= */
         emit_isdo(reg_pos, reg_pos, reg_pos, o);
-        if (t & 1)  emit_isdo(0, reg_pos, reg_pos, 1064979);
-            /* xori REG, REG, 1         >= or <= */
+        if ((condition & 1) != 0) {
+            emit_isdo(0, reg_pos, reg_pos, 1064979);
+                /* xori REG, REG, 1         >= or <= */
+        }
     }
 }
 
@@ -250,43 +256,33 @@ unsigned int emit_pre_while()
 
 unsigned int emit_if(unsigned int condition)
 {
-    /* in this case reg_pos must be 10 */
-    unsigned int o = 10485859;  
-        /* 00A00063     BEQ ZERO, A0, +0 */
-        /* Don't use the recommended `BEQ A0, ZERO, +0` which is abbreviated
-           as `BNEZ A0, +0`.
-           Reason: In refactor() a0 will be replaced by a register and this way
-           A0 remains at the same position in the opcode and no special case is
-           needed. */
+    /* in this case reg_pos must be 11 */
+    reg_pos = 10;
 
-    if (condition) {
-        /* reg_pos must be 11 */
-        reg_pos = 10;
-
-        o = 10874979;
-        if (condition < 18) {
-            o = 11866211;
-            if (last_insn == 1427) { /* 00000593  addi a1, x0, 0 */
-                /* optimization if compared with 0 */
-                code_pos = code_pos - 4;
-                o = 10489955;  /* 00A01063 bne zero, a0, +0 */
-                    /* Don't use the recommended `bne a0, zero, +0` which is
-                       abbreviated as `bnez a0, +0`.
-                       Reason: in refactor() a0 will be replaced by a register
-                       and this way a0 remains at the same position in the
-                       opcode and no special case is needed. */
-            }
+    unsigned int o = 10874979;
+    if (condition < 2) {
+        o = 11866211;
+        if (last_insn == 1427) { /* 00000593  addi a1, x0, 0 */
+            /* optimization if compared with 0 */
+            code_pos = code_pos - 4;
+            o = 10489955;  /* 00A01063 bne zero, a0, +0 */
+                /* Don't use the recommended `bne a0, zero, +0` which is
+                   abbreviated as `bnez a0, +0`.
+                   Reason: in refactor() a0 will be replaced by a register
+                   and this way a0 remains at the same position in the
+                   opcode and no special case is needed. */
         }
-        else if (condition < 20) o = 11890787;
-        o = o - ((condition & 1) << 12);
-            /* t==16 00B51063     bne a0, a1, +0    ==
-               t==17 00B50063     beq a0, a1, +0    !=
-               t==18 00B57063     bgeu a0, a1, +0   <
-               t==19 00B56063     bltu a0, a1, +0   >=
-               t==20 00A5F063     bgeu a1, a0, +0   >
-               t==21 00A5E063     bltu a1, a0, +0   <=      */
     }
-    emit32(o);
+    else if (condition < 4) {
+        o = 11890787;
+    }
+    emit32(o - ((condition & 1) << 12));
+            /* 0  00B51063     bne a0, a1, +0    ==
+               1  00B50063     beq a0, a1, +0    !=
+               2  00B57063     bgeu a0, a1, +0   <
+               3  00B56063     bltu a0, a1, +0   >=
+               4  00A5F063     bgeu a1, a0, +0   >
+               5  00A5E063     bltu a1, a0, +0   <= */
     return code_pos - 4;
 }
 
@@ -375,7 +371,7 @@ unsigned int emit_local_var(unsigned int init)
     num_locals = num_locals + 1;
     update_locals(num_locals);
 
-    if (init) {                                 /* set initial value */
+    if (init != 0) {                                 /* set initial value */
         emit_stype(10559523, num_locals);
         /* SW A0, num_locals(SP) */
     }
@@ -411,7 +407,7 @@ unsigned int emit_func_begin(unsigned int n)
        refactored and the arguments are stored in registers, the register
        numbers might overlap (e.g. in emit_isdo()).
      */
-    while (n) {
+    while (n != 0) {
         emit_stype(9510947 + (n << 20), n);
             /* SW REG[n-1+10], (4*n)(SP) */
         n = n - 1;
@@ -479,16 +475,16 @@ void refactor(unsigned int start_pos, unsigned int end_pos)
             /*         & 0xFF05F) == 0x12003 */
 
             /* load or store local variable */
-            if (insn & 32) {
+            if ((insn & 32) != 0) {
                 /* store */
-                unsigned int reg_for_var = (((insn >> 9) & 7) + ((insn >> 26) << 3))
-                                        + max_reg_pos;
+                unsigned int reg_for_var =
+                    (((insn >> 9) & 7) + ((insn >> 26) << 3)) + max_reg_pos;
                 unsigned int prev_insn = get_32bit(buf + code_pos - 4);
                 unsigned int prev_opcode = prev_insn & 127;
 
-                if ((((prev_insn >> 7) & 31) == 10) &
-                    ((prev_opcode == 19) |        /* arith with immediate */
-                     (prev_opcode == 51)))        /* arith with reg */
+                if (((((prev_insn >> 7) & 31) == 10) &
+                     ((prev_opcode == 19) |        /* arith with immediate */
+                      (prev_opcode == 51))) != 0)  /* arith with reg */
                 {
                     code_pos = code_pos - 4;
                     emit32((prev_insn & 4294963327) | (reg_for_var << 7));
@@ -507,16 +503,16 @@ void refactor(unsigned int start_pos, unsigned int end_pos)
                 unsigned int next_opcode = next_insn & 127;
                 unsigned int rd = (insn >> 7) & 31;
 
-                if ((next_insn == 11862051) |   /* 00B50023  SB A1,0(A0) */
-                    (next_opcode == 51) |       /* arith with reg */
-                    (next_opcode == 99))        /* branch */
+                if (((next_insn == 11862051) |  /* 00B50023  SB A1,0(A0) */
+                     (next_opcode == 51) |      /* arith with reg */
+                     (next_opcode == 99)) != 0) /* branch */
                 {
                     emit32((next_insn & 4262461439) | (reg_for_var << 20));
                         /*            & 0xFE0FFFFF */
                     i = i + 4;
                 }
-                else if ((next_opcode == 19) & 
-                         (((next_insn >> 15) & 31) == rd)) /* 1st.rd == 2nd.rs1 */
+                else if (((next_opcode == 19) &
+                    (((next_insn >> 15) & 31) == rd)) != 0) /* 1st.rd == 2nd.rs1 */
                 {
                     /* arith with immediate */
                     emit32((next_insn & 4293951487) | (reg_for_var << 15));
@@ -555,7 +551,7 @@ void walk_through(unsigned int start_pos, unsigned int end_pos)
             if ((insn & 4095) == 111) { /* JAL X0, */
                 unsigned int jump_target = extract_jal_disp(insn) + branch_target - 4;
 
-                if (insn >> 31) { /* jump backward => while loop */
+                if ((insn >> 31) != 0) { /* jump backward => while loop */
                     refactor(start_pos, jump_target);
                     unsigned int new_loop_pos = code_pos;
                     refactor(jump_target, branch_pos);
@@ -592,7 +588,7 @@ void emit_func_end()
 {
     emit_return();
 
-    if ((num_calls == 0) & (max_reg_pos + num_locals < 32)) {
+    if (((num_calls == 0) & (max_reg_pos + num_locals < 32)) != 0) {
         unsigned int function_end_pos = code_pos;
         code_pos = function_start_pos;
         walk_through(function_start_pos + 8, function_end_pos);
@@ -604,7 +600,7 @@ void emit_func_end()
         unsigned int insn = (max_locals << 22) + 4260115;
             /* 00010113  ADD SP, SP, 4*(max_locals+1) */
         unsigned int next = addsp_list;
-        while (next) {
+        while (next != 0) {
             unsigned char *p = buf + next;
             next = get_32bit(p);
             set_32bit(p, insn);

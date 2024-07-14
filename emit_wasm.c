@@ -22,8 +22,10 @@ unsigned int num_params;
 unsigned int last_insn;
     /* Contains the last instruction, but only under special circumstances
        0  = unknown
+       1  = push 0
        15 = return
-       26 = drop */
+       26 = drop
+       */
 
 unsigned int block_start_pos;
 unsigned int func_no;    /* function number of next function */
@@ -120,7 +122,7 @@ void emit32(unsigned int n)
 void emit_leb(unsigned int n)
 {
     unsigned int negative = 0;
-    if (n >> 31) { 
+    if ((n >> 31) != 0) {
         /* large uint32 = negative int32, must be emitted as signed LEB */
         emit(n | 128);
         n = (n >> 7) & 33554431;
@@ -160,6 +162,9 @@ void emit_number(unsigned int x)
     emit(65);                                   /* 41   i32.const */
     emit_leb(x);
     stack_pos = stack_pos + 1;
+    if (x == 0) {
+        last_insn = 1;
+    }
 }
 
 
@@ -192,7 +197,7 @@ void emit_string(unsigned int len, char *s)
 
 void emit_store(unsigned int global, unsigned int ofs)
 {
-    if (global) {
+    if (global != 0) {
         emit(36);                               /* 24           global.set */
     }
     else {
@@ -206,7 +211,7 @@ void emit_store(unsigned int global, unsigned int ofs)
 
 void emit_load(unsigned int global, unsigned int ofs)
 {
-    if (global) {
+    if (global != 0) {
         emit(35);                               /* 23           global.get */
     }
     else {
@@ -250,12 +255,19 @@ void emit_operation(unsigned int op)
 }
 
 
-void emit_comp(unsigned int op)
+void emit_comp(unsigned int condition)
 {
-    /*              ==  !=  <   >=  >   <=  */
-    /* signed:    \x46\x47\x48\x4e\x4a\x4c  */
-    char *code = "\x46\x47\x49\x4f\x4b\x4d";
-    emit(code[op - 16]);
+    /* optimization: remove "!= 0" */
+    /* if (((condition == 1) & (last_insn == 1)) != 0) { */
+    if ((condition*last_insn) == 1) {
+        code_pos = code_pos - 2;
+    }
+    else {
+        /*              ==  !=  <   >=  >   <=  */
+        /* signed:    \x46\x47\x48\x4e\x4a\x4c  */
+        char *code = "\x46\x47\x49\x4f\x4b\x4d";
+        emit(code[condition]);
+    }
     stack_pos = stack_pos - 1;
 }
 
@@ -274,9 +286,7 @@ unsigned int emit_pre_while()
 
 unsigned int emit_if(unsigned int condition)
 {
-    if (condition) {
-        emit_comp(condition);
-    }
+    emit_comp(condition);
 
     emit(4); emit(64);                          /* 04 40        if (no result) */
     emit(1);                                    /* 01           nop */
@@ -309,7 +319,7 @@ unsigned int emit_jump_and_fix_branch_here(unsigned int destination, unsigned in
     /* destination==0: beginning of else branch
        destination!=0: end of while loop */
 
-    if (destination) {
+    if (destination != 0) {
         /* At the end of loop add: */
         emit32(185270540);                      /* 0C 01        br 1 */
                                                 /* 0B           end */
@@ -378,7 +388,7 @@ unsigned int emit_local_var(unsigned int init)
 {
     num_locals = num_locals + 1;
 
-    if (init) {
+    if (init != 0) {
         emit_store(0, num_params + num_locals);
     }
 
@@ -462,7 +472,7 @@ unsigned int emit_func_begin(unsigned int n)
 
 void emit_func_end()
 {
-    if (num_locals) {
+    if (num_locals != 0) {
         /* overwrite number of locals at the beginning of the code */
         buf[func_start_pos+5] = 1;          /* vector length 1 */
         buf[func_start_pos+6] = num_locals; /* number of local vars */
@@ -533,7 +543,7 @@ unsigned int emit_end()
     buf[code_section_pos] = 11; /* end bytecode at end of function */
 
     unsigned int i = code_pos;
-    while (i) {
+    while (i != 0) {
         unsigned int len = get_32bit(buf + i - 4);
         unsigned int blocktype = buf[i-5];
         i = i - len - 4;
@@ -541,14 +551,14 @@ unsigned int emit_end()
 
         if (blocktype == 91) { /* data block, copy to data section */
             data_section_pos = data_section_pos - len;
-            while (len) {
+            while (len != 0) {
                 len = len - 1;
                 buf[data_section_pos + len] = buf[i + len];
             }
         }
         else { /* code block */
             code_section_pos = code_section_pos - len;
-            while (len) {
+            while (len != 0) {
                 len = len - 1;
                 buf[code_section_pos + len] = buf[i + len];
             }

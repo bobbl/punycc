@@ -106,7 +106,7 @@ void emit_pop(unsigned int n)
 void emit_number(unsigned int x)
 {
     last_imm = x;
-    if (x) {
+    if (x != 0) {
         emit(184);                              /* B8        mov eax, imm32 */
         emit32(x);
         last_insn = 31;
@@ -136,7 +136,7 @@ void access_var(unsigned int which,
     unsigned int ofs = ofs_p; /* smaller code */
 
     /* global variable */
-    if (which) {
+    if (which != 0) {
         emit(opcode_global);
         if (opcode_global == opcode_local)
              emit(modrm + 5); /* other than mov requires extra byte */
@@ -145,7 +145,7 @@ void access_var(unsigned int which,
     }
 
     /* local variable in register */
-    if (ofs >> 30) {
+    if ((ofs >> 30) != 0) {
         if (opcode_local == 137) { /* special case: store regvar */
             emit(137);                          /* 89        mov e??, eax */
             emit((ofs & 7) + 196);
@@ -269,7 +269,9 @@ void emit_operation(unsigned int op)
             emit32(4059550257);                 /* 31 D2     xor edx, edx */
                                                 /* F7 F1     div ecx */
         }
-        if (op >= 10) emit(146);                /* 92        xchg eax, edx */
+        if (op >= 10) {
+            emit(146);                          /* 92        xchg eax, edx */
+        }
         return;
     }
 
@@ -295,7 +297,9 @@ void emit_operation(unsigned int op)
 
         /*          -   |   ^   +   &   *    */
         emiti("   \x2d\x0d\x35\x05\x25\x69", op);
-        if (op == 8) emit(192);                 /* 69 C0 ..  imul eax, eax, imm32 */
+        if (op == 8) {
+            emit(192);                          /* 69 C0 ..  imul eax, eax, imm32 */
+        }
         emit32(last_imm);
         return;
     }
@@ -317,7 +321,9 @@ void emit_operation(unsigned int op)
                8  *   F7 28  imul eax, [] */
         access_last_load(op2code[op + 9], op2code[op]);
 
-        if (op >= 3) return;
+        if (op >= 3) {
+            return;
+        }
         /* For SHL and SHR only `mov ecx, []` was emitted. The remaining
            code is emitted at the end of this function. */
     }
@@ -325,7 +331,9 @@ void emit_operation(unsigned int op)
     /* general case */
     else {
         emit(89);                               /* 59        pop ecx */
-        if (op <= 3) emit(145);                 /* 91        xchg eax, ecx */
+        if (op <= 3) {
+            emit(145);                          /* 91        xchg eax, ecx */
+        }
     }
 
     /*        <<  >>  -   |   ^   +   &   *   */
@@ -375,7 +383,7 @@ void emit_comp(unsigned int condition)
 {
     compare_with_imm();
     /*     \x94\x95\x9c\x9d\x9f\x9e" for signed */
-    emiti("\x94\x95\x92\x93\x97\x96", condition - 16);
+    emiti("\x94\x95\x92\x93\x97\x96", condition);
                                                 /* 0F .. C0  setCC al */
     emit32(3233157056);                         /* 0F B6 C0  movzx eax, al */
 }
@@ -387,15 +395,11 @@ unsigned int emit_pre_while()
 
 unsigned int emit_if(unsigned int condition)
 {
-    if (condition) {
-        compare_with_imm();
-        /*     \x85\x84\x8d\x8c\x8e\x8f for signed */
-        emiti("\x85\x84\x83\x82\x86\x87", condition - 16);
+    compare_with_imm();
+    /*     \x85\x84\x8d\x8c\x8e\x8f for signed */
+    emiti("\x85\x84\x83\x82\x86\x87", condition);
                                                 /* 0F ..     jCC ... */
-    }
-    else {
-        emit32(2215624837);                     /* 85 C0     test eax, eax */
-    }                                           /* 0F 84     jz ... */
+
     emit32(0);
     last_insn = 34;
     return code_pos - 4;
@@ -496,7 +500,7 @@ unsigned int emit_local_var(unsigned int init)
             num_regvars = num_regvars + 1;
             emiti("\x53\x55\x56\x57", num_regvars);
             r = num_regvars + 1073741824;
-            if (init) {
+            if (init != 0) {
                 emit_store(0, r);
             }
             return r;
@@ -533,7 +537,7 @@ void emit_return()
                                                 /* 5E           pop esi */
                                                 /* 5D           pop ebp */
 
-    if (num_params) {
+    if (num_params != 0) {
         emit(194);                              /* C2 nn nn     ret n */
         emit(num_params << 2); /* FIXME: num_params > 63 */
         emit(0);
@@ -554,7 +558,7 @@ unsigned int emit_func_begin(unsigned int n)
 
 void emit_func_end()
 {
-    if (need_return) {
+    if (need_return != 0) {
         emit_return();
     }
 }
