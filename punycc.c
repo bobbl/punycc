@@ -20,20 +20,20 @@ Symbol Type
     74 local variable (or argument)
 
 Token
-
-  operations  conditions    other     reserved words     types
-    00h EOF     10h ==      28h (       60h if          65h void
-    01h <<      11h !=      29h )       61h else        66h char
-    02h >>      12h <       2Ch ,       62h while       67h int
-    03h -       13h >=      3Bh ;       63h return      68h unsigned
-    04h |       14h >       3Dh =       64h _Pragma     69h long
-    05h ^       15h <=      5Bh [
-    06h +                   5Dh ]
-    07h &                   5Eh number
-    08h *                   5Fh identifier
-    09h /                   7Bh {
-    0Ah %                   7Dh }
- */
+    operations    conditions    other   reserved words      special
+                  50h 'P' ==    28h (    03h if             00h     EOF
+    41h 'A' <<    51h 'Q' !=    29h )    04h else           01h     string
+    42h 'B' >>    52h 'R' <     2Ch ,    05h while          0Dh     identifier
+    43h 'C' -     53h 'S' >=    3Bh ;    06h return         5Eh '^' number
+    44h 'D' |     54h 'T' >     3Dh =    07h  _Pragma
+    45h 'E' ^     55h 'U' <=    5Bh [
+    46h 'F' +                   5Dh ]   types
+    47h 'G' &                   7Bh {    08h void
+    48h 'H' *                   7Dh }    09h char
+    49h 'I' /                            0Ah int
+    4Ah 'J' %                            0Bh unsigned
+                                         0Ch long
+*/
 
 
 
@@ -91,9 +91,10 @@ int token_cmp(char *s, unsigned int n)
 
 unsigned int next_char()
 {
-    char  *classify  = "         WW  W                  W!\x22  \x0a\x07\x27()\x08\x06,\x03 W^^^^^^^^^^ ;\x12=\x14  __________________________[ ]\x05_ __________________________{\x04}  ";
+    char  *classify  = "         ##  #                  #!!  JG!()HF,C #^^^^^^^^^^ ;R=T  __________________________[ ]E_ __________________________{D}  ";
         /*              01234567890123456789012345678901234567890123456789 
-         W = whitespace (9, 10, ' ', '/')
+         ! = look at character for further processing
+         # = whitespace (9, 10, 13, ' ', '/')
          ^ = digit [0123456789]
          _ = letter or underscore
         */
@@ -132,10 +133,10 @@ void get_token()
     token_int = 0;
     token = 0;
 
-    while (ch_class == 'W') { /* ch = 9,10,13,' ','/' */
+    while (ch_class == '#') { /* ch = 9,10,13,' ','/' */
         if (ch == '/') {
             if (next_char() != '*') {
-                token = 9; /* 9 '/' */
+                token = 'I'; /* 'I' /  */
                 return;
             }
             while (next_char() != '/') {
@@ -156,12 +157,12 @@ void get_token()
 
     token = ch_class;
     if (ch == 39) {                  /* ' */
-        token = 94; /* '^' number */
         token_int = next_char();
         while (next_char() != 39) {}
         next_char();
+        token = '^'; /* '^' 5Eh number */
     }
-    else if (token == '"') { /* string */
+    else if (ch == '"') { /* string */
         next_char();
         while (ch != 34) {
             if (ch == 92) { /* \ */
@@ -176,16 +177,16 @@ void get_token()
             store_char();
         }
         next_char();
+        token = 1; /* 0x01 string */
     }
-    else if (token == '^') { /* number */
-        while (ch_class == '^') { /* 0-9 */
+    else if (ch_class == '^') { /* digit 0...9 */
+        while (ch_class == '^') {
             token_int = (10 * token_int) + ch - 48; /* '0' */
             next_char();
         }
+        /* token = '^' 0x5E number */
     }
-    else if (token == '_') { /* identifier */
-        /* ch_class == token == 95 at this point */
-
+    else if (ch_class == '_') { /* letter or underscore */
         /* store identifier in space between code and symbol table */
         while ((ch_class & 254) == 94) { /* ==94 if  '^' or '_' */
             store_char();
@@ -196,7 +197,7 @@ void get_token()
         char *keywords = "2if4else5while6return7_Pragma4void4char3int8unsigned4long0";
         i = 0;
         len = 2;
-        token = 96;
+        token = 3;
         while (len != 0) {
             if (len == token_int) {
                 if (token_cmp(keywords + i + 1, token_int) != 0) {
@@ -207,42 +208,46 @@ void get_token()
             i = i + len + 1;
             len = keywords[i] - '0';
         }
-        token = 95; /* '_' identifier */
+        /* token = 13 0x0D identifier */
     }
     else if (ch == '!') {
         if (next_char() != '=') {
             error(101); /* Error: invalid character */
         }
         next_char();
-        token = 17; /* 0x11 ne */
+        token = 'Q'; /* 'Q' 0x51 != */
     }
     else if (ch == '<') {
         if (next_char() == '<') {
             next_char();
-            token = 1; /* 1 << */
+            token = 'A'; /* 'A' 0x41 << */
         }
         else if (ch == '=') {
             next_char();
-            token = 21; /* 0x15 le */
+            token = 'U'; /* 'U' 0x55 <= */
         }
+        /* token = 'R' 0x52 < */
     }
     else if (ch == '=') {
         if (next_char() == '=') {
             next_char();
-            token = 16; /* 0x10 eq */
+            token = 'P'; /* 'P' 0x50 == */
         }
+        /* token = '=' 0x3D = (assignment) */
     }
     else if (ch == '>') {
         if (next_char() == '=') {
             next_char();
-            token = 19; /* 0x13 setae */
+            token = 'S'; /* 'S' 0x53 >= */
         }
         else if (ch == '>') {
             next_char();
-            token = 2; /* 2 >> */
+            token = 'B'; /* 'B' 0x42 >> */
         }
+        /* token = 'T' 0x54 > */
     }
     else {
+        /* case for (),;[]{} */
         next_char();
     }
 }
@@ -258,7 +263,7 @@ void get_token()
 
 unsigned int sym_lookup()
 {
-    if (token != '_') {
+    if (token != 13) {
         error(103); /* Error: identifier expected */
     }
     unsigned int s = syms_head;
@@ -339,10 +344,7 @@ void expect(unsigned int t)
 
 unsigned int accept_type_id()
 {
-    if (token < 101) {
-        return 0;
-    }
-    if (token > 105) {
+    if ((token - 8) > 4) { /* 8...12 */
         return 0;
     }
     get_token();
@@ -353,7 +355,7 @@ unsigned int accept_type()
 {
     if (accept_type_id() != 0) {
         while (accept_type_id() != 0) {}
-        while (accept(8) != 0) {} /* multiple * */
+        while (accept('H') != 0) {} /* multiple stars */
         return 1;
     }
     return 0;
@@ -374,9 +376,9 @@ void parse_factor();
 void parse_operation()
 {
     parse_factor();
-    while (token < 16) {
+    while ((token & 240) == 64) {
         emit_push();
-        unsigned int op = token;
+        unsigned int op = token & 15;
         get_token();
         parse_factor();
         emit_operation(op);
@@ -389,7 +391,7 @@ void parse_operation()
 void parse_expression()
 {
     parse_operation();
-    if ((token & 240) == 16) { /* (token & 0xF0) == 0x10 */
+    if ((token & 248) == 80) { /* (token & 0xF8) == 0x50 */
         emit_push();
         unsigned int op = token & 15;
         get_token();
@@ -406,7 +408,7 @@ unsigned int parse_condition()
     expect('(');
     parse_operation();
     emit_push();
-    if ((token & 240) == 16) { /* (token & 0xF0) == 0x10 */
+    if ((token & 248) == 80) { /* (token & 0xF8) == 0x50 */
         cond = token & 15;
         get_token();
         parse_operation();
@@ -452,7 +454,7 @@ void parse_factor()
         emit_number(token_int);
         get_token();
     }
-    else if (token == '"') { /* string */
+    else if (token == 1) { /* string */
         set_32bit((unsigned char *)token_buf + token_int, 0);
             /* append 4 zero bytes to simplify alignment in the backends */
         emit_string(token_int, token_buf);
@@ -536,10 +538,10 @@ void parse_statement()
         emit_scope_end(s);
         syms_head = h;
     }
-    else if (accept(96) != 0) { /* if */
+    else if (accept(3) != 0) { /* if */
         h = parse_condition();
         parse_statement();
-        if (accept(97) != 0) { /* else */
+        if (accept(4) != 0) { /* else */
             s = emit_jump_and_fix_branch_here(0, h);
             parse_statement();
             emit_fix_jump_here(s);
@@ -548,13 +550,13 @@ void parse_statement()
             emit_fix_branch_here(h);
         }
     }
-    else if (accept(98) != 0) { /* while */
+    else if (accept(5) != 0) { /* while */
         h = emit_pre_while();
         s = parse_condition();
         parse_statement();
         emit_jump_and_fix_branch_here(h, s);
     }
-    else if (accept(99) != 0) { /* return */
+    else if (accept(6) != 0) { /* return */
         if (accept(';') == 0) {
             parse_expression();
             expect(';');
@@ -592,16 +594,16 @@ void parse_function(unsigned int sym)
     while (accept(')') == 0) {
         n = n + 1;
         expect_type();
-        if (token == '_') { /* identifier */
+        if (token == 13) { /* identifier */
             sym_append(n, 74);
         }
         accept(','); /* ignore trailing comma */
     }
 
-    if (accept(100) != 0) { /* _Pragma */
+    if (accept(7) != 0) { /* _Pragma */
         expect('(');
         while (token != ')') {
-            if (token == '"') {
+            if (token == 1) { /* string */
                 if (token_cmp("PunyC emit ", 11) != 0) {
                     sym_fix(sym, emit_binary_func(token_int-11, token_buf+11));
                 }
