@@ -23,7 +23,7 @@ Token
     operations    conditions    other   reserved words      special
                   50h 'P' ==    28h (    03h if             00h     EOF
     41h 'A' <<    51h 'Q' !=    29h )    04h else           01h     string
-    42h 'B' >>    52h 'R' <     2Ch ,    05h while          0Dh     identifier
+    42h 'B' >>    52h 'R' <     2Ch ,    05h while          0Fh     identifier
     43h 'C' -     53h 'S' >=    3Bh ;    06h return         5Eh '^' number
     44h 'D' |     54h 'T' >     3Dh =    07h  _Pragma
     45h 'E' ^     55h 'U' <=    5Bh [
@@ -33,6 +33,8 @@ Token
     49h 'I' /                            0Ah int
     4Ah 'J' %                            0Bh unsigned
                                          0Ch long
+                                         0Dh static
+                                         0Eh const
 */
 
 
@@ -44,16 +46,16 @@ Token
  * Scanner
  **********************************************************************/
 
-unsigned int ch;
-unsigned int ch_class;
-unsigned int lineno;
-unsigned int token;
-unsigned int token_int;
-unsigned int token_size;
-char *token_buf;
-unsigned int syms_head;
+static unsigned int ch;
+static unsigned int ch_class;
+static unsigned int lineno;
+static unsigned int token;
+static unsigned int token_int;
+static unsigned int token_size;
+static char *token_buf;
+static unsigned int syms_head;
 
-void itoa4(unsigned int x)
+static void itoa4(unsigned int x)
 {
     unsigned int i = x * 134218; /* x = x * (((1<<27)/1000) + 1) */
     char *s = (char *)buf + syms_head - 16;
@@ -67,7 +69,7 @@ void itoa4(unsigned int x)
     write(2, s, 4);
 }
 
-void error(unsigned int no)
+static void error(unsigned int no)
 {
     write(2, "Error ", 6);
     itoa4(no);
@@ -77,7 +79,7 @@ void error(unsigned int no)
     exit(no);
 }
 
-int token_cmp(char *s, unsigned int n)
+static unsigned int token_cmp(const char *s, unsigned int n)
 {
     unsigned int i = 0;
     while (s[i] == token_buf[i]) {
@@ -89,10 +91,10 @@ int token_cmp(char *s, unsigned int n)
     return 0;
 }
 
-unsigned int next_char()
+static unsigned int next_char(void)
 {
-    char  *classify  = "         ##  #                  #!!  JG!()HF,C #^^^^^^^^^^ ;R=T  __________________________[ ]E_ __________________________{D}  ";
-        /*              01234567890123456789012345678901234567890123456789 
+    const char  *classify  = "         ##  #                  #!!  JG!()HF,C #^^^^^^^^^^ ;R=T  __________________________[ ]E_ __________________________{D}  ";
+        /*                    01234567890123456789012345678901234567890123456789
          ! = look at character for further processing
          # = whitespace (9, 10, 13, ' ', '/')
          ^ = digit [0123456789]
@@ -102,24 +104,24 @@ unsigned int next_char()
     if (ch == 10) {
         lineno = lineno + 1;
     }
-    ch_class = ' ';
+    ch_class = 32; /* ' ' */
     if (ch < 128) {
         ch_class = classify[ch];
     }
     return ch;
 }
 
-void store_char()
+static void store_char(void)
 {
     token_buf[token_int] = ch;
     token_int = token_int + 1;
     if (token_int >= token_size) {
         error(100); /* Error: buffer overflow */
     }
-    next_char();
+    (void)next_char();
 }
 
-void get_token()
+static void get_token(void)
 {
     unsigned int i;
     unsigned int len;
@@ -136,16 +138,16 @@ void get_token()
     while (ch_class == '#') { /* ch = 9,10,13,' ','/' */
         if (ch == '/') {
             if (next_char() != '*') {
-                token = 'I'; /* 'I' /  */
+                token = 73; /* 'I' /  */
                 return;
             }
             while (next_char() != '/') {
                 while (ch != '*') {
-                    next_char();
+                    (void)next_char();
                 }
             }
         }
-        next_char();
+        (void)next_char();
     }
 
     if (ch > 255) {
@@ -159,30 +161,30 @@ void get_token()
     if (ch == 39) {                  /* ' */
         token_int = next_char();
         while (next_char() != 39) {}
-        next_char();
-        token = '^'; /* '^' 5Eh number */
+        (void)next_char();
+        token = 94; /* '^' 5Eh number */
     }
     else if (ch == '"') { /* string */
-        next_char();
+        (void)next_char();
         while (ch != 34) {
             if (ch == 92) { /* \ */
                 if (next_char() == 'x') {
-                    i = next_char() - 48; /* 0 */
+                    i = next_char() - 48; /* '0' */
                     if (i > 9) { i = i - 39; }
-                    len = next_char() - 48; /* 0 */
+                    len = next_char() - 48; /* '0' */
                     if (len > 9) { len = len - 39; }
                     ch = (i << 4) + len;
                 }
             }
             store_char();
         }
-        next_char();
+        (void)next_char();
         token = 1; /* 0x01 string */
     }
     else if (ch_class == '^') { /* digit 0...9 */
         while (ch_class == '^') {
             token_int = (10 * token_int) + ch - 48; /* '0' */
-            next_char();
+            (void)next_char();
         }
         /* token = '^' 0x5E number */
     }
@@ -194,7 +196,7 @@ void get_token()
         token_buf[token_int] = 0;
 
         /* search keyword */
-        char *keywords = "2if4else5while6return7_Pragma4void4char3int8unsigned4long0";
+        const char *keywords = "2if4else5while6return7_Pragma4void4char3int8unsigned4long6static5const0";
         i = 0;
         len = 2;
         token = 3;
@@ -208,47 +210,51 @@ void get_token()
             i = i + len + 1;
             len = keywords[i] - '0';
         }
-        /* token = 13 0x0D identifier */
+        /* token = 15 0x0F identifier */
     }
     else if (ch == '!') {
         if (next_char() != '=') {
             error(101); /* Error: invalid character */
         }
-        next_char();
-        token = 'Q'; /* 'Q' 0x51 != */
+        (void)next_char();
+        token = 81; /* 'Q' 0x51 != */
     }
     else if (ch == '<') {
         if (next_char() == '<') {
-            next_char();
-            token = 'A'; /* 'A' 0x41 << */
+            (void)next_char();
+            token = 65; /* 'A' 0x41 << */
         }
-        else if (ch == '=') {
-            next_char();
-            token = 'U'; /* 'U' 0x55 <= */
+        else {
+            if (ch == '=') {
+                (void)next_char();
+                token = 85; /* 'U' 0x55 <= */
+            }
         }
         /* token = 'R' 0x52 < */
     }
     else if (ch == '=') {
         if (next_char() == '=') {
-            next_char();
-            token = 'P'; /* 'P' 0x50 == */
+            (void)next_char();
+            token = 80; /* 'P' 0x50 == */
         }
         /* token = '=' 0x3D = (assignment) */
     }
     else if (ch == '>') {
         if (next_char() == '=') {
-            next_char();
-            token = 'S'; /* 'S' 0x53 >= */
+            (void)next_char();
+            token = 83; /* 'S' 0x53 >= */
         }
-        else if (ch == '>') {
-            next_char();
-            token = 'B'; /* 'B' 0x42 >> */
+        else {
+            if (ch == '>') {
+                (void)next_char();
+                token = 66; /* 'B' 0x42 >> */
+            }
         }
         /* token = 'T' 0x54 > */
     }
     else {
         /* case for (),;[]{} */
-        next_char();
+        (void)next_char();
     }
 }
 
@@ -261,9 +267,9 @@ void get_token()
  **********************************************************************/
 
 
-unsigned int sym_lookup()
+static unsigned int sym_lookup(void)
 {
-    if (token != 13) {
+    if (token != 15) {
         error(103); /* Error: identifier expected */
     }
     unsigned int s = syms_head;
@@ -279,7 +285,7 @@ unsigned int sym_lookup()
     return 0;
 }
 
-void sym_append(unsigned int addr, unsigned int type)
+static void sym_append(unsigned int addr, unsigned int type)
 {
     unsigned int i = token_int;
     syms_head = syms_head - token_int - 6;
@@ -298,7 +304,7 @@ void sym_append(unsigned int addr, unsigned int type)
 }
 
 
-void sym_fix(unsigned int sym, unsigned int func_pos)
+static void sym_fix(unsigned int sym, unsigned int func_pos)
 {
     unsigned char *s = buf + sym;
     unsigned int i = get_32bit(buf + sym);
@@ -325,7 +331,7 @@ void sym_fix(unsigned int sym, unsigned int func_pos)
  * Parser
  **********************************************************************/
 
-unsigned int accept(unsigned int ch)
+static unsigned int accept(unsigned int ch)
 /* parameter named `ch` to check if name scopes work */
 {
     if (token == ch) {
@@ -335,45 +341,39 @@ unsigned int accept(unsigned int ch)
     return 0;
 }
 
-void expect(unsigned int t)
+static void expect(unsigned int t)
 {
     if (accept(t) == 0) {
         error(102); /* Error: specific token expected */
     }
 }
 
-unsigned int accept_type_id()
+static unsigned int accept_type(void)
 {
-    if ((token - 8) > 4) { /* 8...12 */
-        return 0;
+    unsigned int accepted = 0;
+    while ((token - 8) < 7) { /* 8...14 */
+        get_token();
+        accepted = 1;
     }
-    get_token();
-    return 1;
-}
-
-unsigned int accept_type()
-{
-    if (accept_type_id() != 0) {
-        while (accept_type_id() != 0) {}
+    if (accepted != 0) {
         while (accept('H') != 0) {} /* multiple stars */
-        return 1;
     }
-    return 0;
+    return accepted;
 }
 
-void expect_type()
+static void expect_type(void)
 {
     if (accept_type() == 0) {
         error(106); /* Error: type expected */
     }
 }
 
-void parse_factor();
+static void parse_factor(void);
 
 /* bin_op = "<<" | ">>" | "&" | "|" | "^" | "+" | "-" ;
  * operation = factor , { bin_op , factor } ;
  */
-void parse_operation()
+static void parse_operation(void)
 {
     parse_factor();
     while ((token & 240) == 64) {
@@ -388,7 +388,7 @@ void parse_operation()
 /* cmp_op     = "<" | "<=" | "==" | "!=" | ">=" | ">" ;
  * comparison = binary , [ shift_op , binary ] ;
  */
-void parse_expression()
+static void parse_expression(void)
 {
     parse_operation();
     if ((token & 248) == 80) { /* (token & 0xF8) == 0x50 */
@@ -402,7 +402,7 @@ void parse_expression()
 
 /* condition = "(" , operation , [ cmp_op , operation ] , ")" ;
  */
-unsigned int parse_condition()
+static unsigned int parse_condition(void)
 {
     unsigned int cond = 1;
     expect('(');
@@ -430,7 +430,7 @@ unsigned int parse_condition()
  * bracketed = "(" , expression , ")" ;
  * factor    = number | string | bracketed | lvalue ;
  */
-void parse_factor()
+static void parse_factor(void)
 {
     unsigned int sym;
     unsigned int type;
@@ -524,7 +524,7 @@ void parse_factor()
  * local     = type , identifier , [ "=" , expression ] , ";" ;
  * statement = block | if | while | return | local | expression ;
  */
-void parse_statement()
+static void parse_statement(void)
 {
     unsigned int h;
     unsigned int s;
@@ -585,19 +585,20 @@ void parse_statement()
  * body     = statement | ";" ;
  * function = type , identifier , "(" , params ,  ")" , body ;
  */
-void parse_function(unsigned int sym)
+static void parse_function(unsigned int sym)
 {
-    expect('(');
     unsigned int restore_head = syms_head;
-
     unsigned int n = 0;
+
+    expect('(');
+    (void)accept(8); /* accept foo(void) instead of foo() */
     while (accept(')') == 0) {
         n = n + 1;
         expect_type();
-        if (token == 13) { /* identifier */
+        if (token == 15) { /* identifier */
             sym_append(n, 74);
         }
-        accept(','); /* ignore trailing comma */
+        (void)accept(','); /* ignore trailing comma */
     }
 
     if (accept(7) != 0) { /* _Pragma */
@@ -613,10 +614,12 @@ void parse_function(unsigned int sym)
         get_token();
         expect(';');
     }
-    else if (accept(';') == 0) {
-        sym_fix(sym, emit_func_begin(n));
-        parse_statement();
-        emit_func_end();
+    else {
+        if (accept(';') == 0) {
+            sym_fix(sym, emit_func_begin(n));
+            parse_statement();
+            emit_func_end();
+        }
     }
     syms_head = restore_head;
 }
@@ -624,7 +627,7 @@ void parse_function(unsigned int sym)
 /* global  = type , identifier , ";" ;
  * program = { global | function } ;
  */
-void parse_program()
+static void parse_program(void)
 {
     while (token != 0) {
         expect_type();
@@ -646,14 +649,14 @@ void parse_program()
     }
 }
 
-int main()
+int main(void)
 {
     buf_size  = 65536;
     buf       = malloc(buf_size);
     syms_head = buf_size;
     lineno    = 1;
 
-    next_char();
+    (void)next_char();
     token_int = 4;
     token_buf = "main";
     sym_append(emit_begin(), 72); /* implicit get_token() */

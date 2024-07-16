@@ -19,7 +19,7 @@ unsigned int immpool_pos;
 
 
 
-void error(unsigned int no);
+static void error(unsigned int no);
 
 
 /* helper to write a 32 bit number to a char array */
