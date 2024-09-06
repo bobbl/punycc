@@ -20,21 +20,18 @@ Symbol Type
     74 local variable (or argument)
 
 Token
-    operations    conditions    other   reserved words      special
-                  50h 'P' ==    28h (    03h if             00h     EOF
-    41h 'A' <<    51h 'Q' !=    29h )    04h else           01h     string
-    42h 'B' >>    52h 'R' <     2Ch ,    05h while          0Fh     identifier
-    43h 'C' -     53h 'S' >=    3Bh ;    06h return         5Eh '^' number
-    44h 'D' |     54h 'T' >     3Dh =    07h  _Pragma
-    45h 'E' ^     55h 'U' <=    5Bh [
-    46h 'F' +                   5Dh ]   types
-    47h 'G' &                   7Bh {    08h void
-    48h 'H' *                   7Dh }    09h char
-    49h 'I' /                            0Ah int
-    4Ah 'J' %                            0Bh unsigned
-                                         0Ch long
-                                         0Dh static
-                                         0Eh const
+    operations    conditions    other    reserved words     types
+                  50h 'P' ==    28h (    03h if             08h void
+    41h 'A' <<    51h 'Q' !=    29h )    04h else           09h char
+    42h 'B' >>    52h 'R' <     2Ch ,    05h while          0Ah int
+    43h 'C' -     53h 'S' >=    3Bh ;    06h return         0Bh unsigned
+    44h 'D' |     54h 'T' >     3Dh =    07h  _Pragma       0Ch long
+    45h 'E' ^     55h 'U' <=    5Bh [                       0Dh static
+    46h 'F' +                   5Dh ]    special            0Eh const
+    47h 'G' &                   7Bh {    00h EOF
+    48h 'H' *                   7Dh }    01h string
+    49h 'I' /                            0Fh identifier
+    4Ah 'J' %                            5Eh '^' number
 */
 
 
@@ -475,11 +472,11 @@ static void parse_factor(void)
             unsigned int save = emit_pre_call();
             if (accept(')') == 0) {
                 parse_expression();
-                emit_arg(0);
+                emit_arg();
                 argno = argno + 1;
                 while (accept(',') != 0) {
                     parse_expression();
-                    emit_arg(argno);
+                    emit_arg();
                     argno = argno + 1;
                 }
                 expect(')');

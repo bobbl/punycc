@@ -446,7 +446,7 @@ unsigned int emit_pre_call()
     return 0;
 }
 
-void emit_arg(unsigned int i)
+void emit_arg()
 {
     /* push immediate */
     if (last_insn == 31) {
@@ -506,7 +506,7 @@ unsigned int emit_local_var(unsigned int init)
             return r;
         }
     }
-    emit_arg(0); /* more optimized code than emit_push() */
+    emit_arg(); /* more optimized code than emit_push() */
     return stack_pos + num_params + 1;
 }
 

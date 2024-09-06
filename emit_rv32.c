@@ -328,7 +328,7 @@ unsigned int emit_pre_call()
     return r;
 }
 
-void emit_arg(unsigned int i)
+void emit_arg()
 {
     emit_push();
 }

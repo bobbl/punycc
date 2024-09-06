@@ -89,11 +89,15 @@ void emit_string(unsigned int len, char *s);
  **********************************************************************/
 
 
-/* store accumulator in a global(1) or local(0) variable with address `ofs` */
+/* Store accumulator in a global(1) or local(0) variable with address `ofs`
+   Function arguments have global=0 and ofs=1,2,3,... For other variables,
+   ofs is the return value of emit_local_var() or emit_global_var() */
 void emit_store(unsigned int global, unsigned int ofs);
 
 
-/* load accumulator from a global(1) or local(0) variable with address `ofs` */
+/* Load accumulator from a global(1) or local(0) variable with address `ofs`
+   Function arguments have global=0 and ofs=1,2,3,... For other variables,
+   ofs is the return value of emit_local_var() or emit_global_var() */
 void emit_load(unsigned int global, unsigned int ofs);
 
 
@@ -224,9 +228,8 @@ unsigned int emit_pre_call();
 
 /* Emit code to put the value from the accumulator at the right location for
    an function argument. That could be a stack or a register. It is called in
-   order of the arguments. For three arguments that means emit_arg(0) then
-   emit_arg(1) then emit_arg(2). */
-void emit_arg(unsigned int i);
+   order of the arguments. */
+void emit_arg();
 
 
 /* Call the function at address `ofs`.
@@ -240,8 +243,8 @@ unsigned int emit_call(unsigned int ofs, unsigned int pop, unsigned int save);
 
 
 /* Write a call instruction at the address from. The target address of the call
-   is to. This is used to fix a prevoiusly emit_call() where 4 bytes are
-   reserved for this call. */
+   is to. This is used to fix a previous emit_call() where 4 bytes are reserved
+   for this call. */
 unsigned int emit_fix_call(unsigned int from, unsigned int to);
 
 
@@ -253,8 +256,10 @@ unsigned int emit_fix_call(unsigned int from, unsigned int to);
 
 
 /* Reserve memory for a local variable and return its address.
-  If `init` is not 0, an initial value is in the accumulator and the variable
-  must be set accordingly. */
+   Function arguments have the addresses 1, 2, 3, ... Therefore use an address
+   scheme that fits this.
+   If `init` is not 0, an initial value is in the accumulator and the variable
+   must be set accordingly. */
 unsigned int emit_local_var(unsigned int init);
 
 /* Reserve memory for a global variable and return its address */
