@@ -172,7 +172,8 @@ void emit_comp(unsigned int condition);
 unsigned int emit_pre_while()
 
 
-/* Emit code for a branch if condition is NOT true.
+/* Called after a if or while condition.
+   Emit code for a branch if condition is NOT true.
    Return address where the branch target address will be written later.
 
    condition (same as in emit_comp()
@@ -191,7 +192,7 @@ unsigned int emit_if(unsigned int condition);
    point to the current address.
    The address of the branch instruction is given by the parameter.
 */
-void emit_fix_branch_here(unsigned int insn_pos);
+void emit_then_end(unsigned int insn_pos);
 
 
 /* Called at the end of an else branch.
@@ -199,16 +200,21 @@ void emit_fix_branch_here(unsigned int insn_pos);
    point to the current address.
    The address of the jump instruction is given by the parameter.
 */
-void emit_fix_jump_here(unsigned int insn_pos);
+void emit_else_end(unsigned int insn_pos);
 
 
-/* Called between then and else branch of an if statement when destination==0.
-   Called at the end of a while loop with the value returned by
-   emit_pre_while(). This value must not be 0. Typically it is the address of
-   the top of the loop.
+/* Called between then and else branch of an if statement.
+   insn_pos points to the branch instruction that should be fixed to point to
+   the current address.
+   Return address where the jump target address will be written later  */
+unsigned int emit_then_else(unsigned int insn_pos);
+
+
+/* Called at the end of a while loop with the value returned by
+   emit_pre_while(). Typically it is the address of the top of the loop.
    insn_pos points to the branch instruction that should be fixed to point to
    the current address. */
-unsigned int emit_jump_and_fix_branch_here(unsigned int destination, unsigned int insn_pos);
+void emit_loop(unsigned int destination, unsigned int insn_pos);
 
 
 

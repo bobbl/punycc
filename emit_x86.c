@@ -405,14 +405,14 @@ unsigned int emit_if(unsigned int condition)
     return code_pos - 4;
 }
 
-void emit_fix_branch_here(unsigned int insn_pos)
+void emit_then_end(unsigned int insn_pos)
 {
     set_32bit(buf + insn_pos, code_pos - insn_pos - 4);
 }
 
-void emit_fix_jump_here(unsigned int insn_pos)
+void emit_else_end(unsigned int insn_pos)
 {
-    emit_fix_branch_here(insn_pos);
+    emit_then_end(insn_pos);
 }
 
 void imm8_if_possible(unsigned int opcode, unsigned int imm8, unsigned int imm32)
@@ -427,19 +427,27 @@ void imm8_if_possible(unsigned int opcode, unsigned int imm8, unsigned int imm32
     }
 }
 
-unsigned int emit_jump_and_fix_branch_here(unsigned int destination, unsigned int insn_pos)
+static unsigned int emit_then_else(unsigned int insn_pos)
+{
+    emit(233); emit32(0);
+       /* E9        jmp */
+    emit_then_end(insn_pos);
+    return code_pos - 4; /* does not care for short jump */
+}
+
+static void emit_loop(unsigned int destination, unsigned int insn_pos)
 {
     unsigned int disp = destination - code_pos - 2;
-    if (destination == 0) {
-        disp = 256; /* no short optimization if destination is unknown */
-    }
     imm8_if_possible(233, disp, disp - 3);
        /* EB        jmp imm8 */
        /* E9        jmp */
 
-    emit_fix_branch_here(insn_pos);
-    return code_pos - 4; /* does not care for short jump */
+    emit_then_end(insn_pos);
 }
+
+
+
+
 
 unsigned int emit_pre_call()
 {

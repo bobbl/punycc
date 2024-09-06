@@ -539,19 +539,19 @@ static void parse_statement(void)
         h = parse_condition();
         parse_statement();
         if (accept(4) != 0) { /* else */
-            s = emit_jump_and_fix_branch_here(0, h);
+            s = emit_then_else(h);
             parse_statement();
-            emit_fix_jump_here(s);
+            emit_else_end(s);
         }
         else {
-            emit_fix_branch_here(h);
+            emit_then_end(h);
         }
     }
     else if (accept(5) != 0) { /* while */
         h = emit_pre_while();
         s = parse_condition();
         parse_statement();
-        emit_jump_and_fix_branch_here(h, s);
+        emit_loop(h, s);
     }
     else if (accept(6) != 0) { /* return */
         if (accept(';') == 0) {

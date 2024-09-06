@@ -432,24 +432,30 @@ static unsigned int emit_if(unsigned int condition)
     return code_pos - 2;
 }
 
-static void emit_fix_branch_here(unsigned int insn_pos)
+static void emit_then_end(unsigned int insn_pos)
 {
     unsigned int disp = code_pos - insn_pos - 4;
     buf[insn_pos] = disp >> 1;
     buf[insn_pos + 1] = ((disp >> 9) & 7) + 224;
 }
 
-static void emit_fix_jump_here(unsigned int insn_pos)
+static void emit_else_end(unsigned int insn_pos)
 {
-    emit_fix_branch_here(insn_pos);
+    emit_then_end(insn_pos);
 }
 
-static unsigned int emit_jump_and_fix_branch_here(unsigned int destination, unsigned int insn_pos)
+static unsigned int emit_then_else(unsigned int insn_pos)
+{
+    emit16(0);
+    emit_then_end(insn_pos);
+    return code_pos - 2;
+}
+
+static void emit_loop(unsigned int destination, unsigned int insn_pos)
 {
     emit16((((destination - code_pos - 4) >> 1) & 2047) + 57344);
         /* jump instruction */
-    emit_fix_branch_here(insn_pos);
-    return code_pos - 2;
+    emit_then_end(insn_pos);
 }
 
 static unsigned int emit_pre_call(void)

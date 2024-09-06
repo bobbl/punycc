@@ -286,7 +286,7 @@ unsigned int emit_if(unsigned int condition)
     return code_pos - 4;
 }
 
-void emit_fix_branch_here(unsigned int insn_pos)
+void emit_then_end(unsigned int insn_pos)
 {
     unsigned int immb = code_pos - insn_pos;
     immb = 
@@ -298,17 +298,23 @@ void emit_fix_branch_here(unsigned int insn_pos)
     last_branch_target = code_pos;
 }
 
-void emit_fix_jump_here(unsigned int insn_pos)
+void emit_else_end(unsigned int insn_pos)
 {
     set_32bit(buf + insn_pos, insn_jal(0, code_pos - insn_pos));
     last_branch_target = code_pos;
 }
 
-unsigned int emit_jump_and_fix_branch_here(unsigned int destination, unsigned int insn_pos)
+static unsigned int emit_then_else(unsigned int insn_pos)
+{
+    emit32(0);
+    emit_then_end(insn_pos);
+    return code_pos - 4;
+}
+
+static void emit_loop(unsigned int destination, unsigned int insn_pos)
 {
     emit32(insn_jal(0, destination - code_pos));
-    emit_fix_branch_here(insn_pos);
-    return code_pos - 4;
+    emit_then_end(insn_pos);
 }
 
 unsigned int emit_pre_call()
@@ -557,7 +563,7 @@ void walk_through(unsigned int start_pos, unsigned int end_pos)
                     refactor(jump_target, branch_pos);
                     unsigned int new_exit_pos = code_pos - 4;
                     walk_through(branch_pos, branch_target - 4);
-                    emit_jump_and_fix_branch_here(new_loop_pos, new_exit_pos);
+                    emit_loop(new_loop_pos, new_exit_pos);
                     branch_pos = branch_target;
                 }
                 else { /* jump forward => else branch */
@@ -565,9 +571,9 @@ void walk_through(unsigned int start_pos, unsigned int end_pos)
                     unsigned int new_branch_pos = code_pos - 4;
                     walk_through(branch_pos, branch_target - 4);
                     unsigned int new_not_else_pos = code_pos;
-                    emit_jump_and_fix_branch_here(0, new_branch_pos);
+                    emit_loop(0, new_branch_pos);
                     walk_through(branch_target, jump_target);
-                    emit_fix_jump_here(new_not_else_pos);
+                    emit_else_end(new_not_else_pos);
                     branch_pos = jump_target;
                 }
             }
@@ -575,7 +581,7 @@ void walk_through(unsigned int start_pos, unsigned int end_pos)
                 refactor(start_pos, branch_pos);
                 unsigned int new_branch_pos = code_pos - 4;
                 walk_through(branch_pos, branch_target);
-                emit_fix_branch_here(new_branch_pos);
+                emit_then_end(new_branch_pos);
                 branch_pos = branch_target;
             }
             start_pos = branch_pos;

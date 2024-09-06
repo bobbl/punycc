@@ -300,42 +300,39 @@ unsigned int emit_if(unsigned int condition)
 }
 
 
-void emit_fix_branch_here(unsigned int insn_pos)
+void emit_then_end(unsigned int insn_pos)
 {
     /* end of then branch without else */
     emit(11);                                   /* 0B           end */
 }
 
 
-void emit_fix_jump_here(unsigned int insn_pos)
+void emit_else_end(unsigned int insn_pos)
 {
     /* end of else branch */
     emit(11);                                   /* 0B           end */
 }
 
 
-unsigned int emit_jump_and_fix_branch_here(unsigned int destination, unsigned int insn_pos)
+static unsigned int emit_then_else(unsigned int insn_pos)
 {
-    /* destination==0: beginning of else branch
-       destination!=0: end of while loop */
+    emit(5);
+    return 0; /* doesn't care */
+}
 
-    if (destination != 0) {
-        /* At the end of loop add: */
-        emit32(185270540);                      /* 0C 01        br 1 */
+
+static void emit_loop(unsigned int destination, unsigned int insn_pos)
+{
+    /* At the end of loop add: */
+    emit32(185270540);                          /* 0C 01        br 1 */
                                                 /* 0B           end */
                                                 /* 0B           end */
 
-        /* The code for the condition and for the loop body, is still separated
-           by the bytecode for if (01 04 40). Fix it now. */
-        buf[insn_pos-3] = 69;                   /* 45           i32.eqz */
-        buf[insn_pos-2] = 13;                   /* 0D 00        br_if 0 */
-        buf[insn_pos-1] = 0;                    /* jump to end of block */
-    }
-    else {
-        emit(5);                                /* 05           else */
-    }
-
-    return 0; /* does not mind in any case */
+    /* The code for the condition and for the loop body, is still separated
+       by the bytecode for if (01 04 40). Fix it now. */
+    buf[insn_pos-3] = 69;                       /* 45           i32.eqz */
+    buf[insn_pos-2] = 13;                       /* 0D 00        br_if 0 */
+    buf[insn_pos-1] = 0;                        /* jump to end of block */
 }
 
 
