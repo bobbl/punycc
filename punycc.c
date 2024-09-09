@@ -313,7 +313,7 @@ static void sym_fix(unsigned int sym, unsigned int func_pos)
 
     while (i != 0) {
         next = get_32bit(buf + i);
-        set_32bit(buf + i, emit_fix_call(i, func_pos));
+        emit_fix_call(i, func_pos);
         i = next;
     }
     set_32bit(s, func_pos);

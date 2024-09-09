@@ -164,10 +164,8 @@ void emit_comp(unsigned int condition);
 
 
 /* Called at the beginning of a while loop, before the condition.
-   The return value is forwarded to emit_jump_and_fix_jump_here() at the end of
-   the loop. It must not be 0, because that means emit_jump_and_fix_jump_here()
-   is called between a then and else branch of a if statement. Typically the
-   return value is code_pos, the address of the top of the loop.
+   The return value is forwarded to emit_loop() at the end of the loop.
+   Typically the return value is code_pos, the address of the top of the loop.
 */
 unsigned int emit_pre_while()
 
@@ -248,10 +246,10 @@ void emit_arg();
 unsigned int emit_call(unsigned int ofs, unsigned int pop, unsigned int save);
 
 
-/* Write a call instruction at the address from. The target address of the call
-   is to. This is used to fix a previous emit_call() where 4 bytes are reserved
-   for this call. */
-unsigned int emit_fix_call(unsigned int from, unsigned int to);
+/* Write a call instruction at the address from. The target of the call is the
+   address to. This is used to fix a previous emit_call() where 4 bytes are
+   reserved for this call. */
+void emit_fix_call(unsigned int from, unsigned int to);
 
 
 
@@ -267,6 +265,7 @@ unsigned int emit_fix_call(unsigned int from, unsigned int to);
    If `init` is not 0, an initial value is in the accumulator and the variable
    must be set accordingly. */
 unsigned int emit_local_var(unsigned int init);
+
 
 /* Reserve memory for a global variable and return its address */
 unsigned int emit_global_var();
@@ -286,8 +285,13 @@ void emit_return();
 
 
 /* Emit a function that consisits of the given binary machine code.
-   The parameters are length and pointer to the machine code. */
-void emit_binary_func(unsigned int n, char *s);
+   The parameters are length and pointer to the machine code.
+   Return the address of the beginning of the function. */
+unsigned int emit_binary_func(unsigned int n, char *s)
+{
+    return code_pos;
+}
+
 
 
 /* Emit code at the beginning of a function.

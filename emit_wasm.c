@@ -362,13 +362,14 @@ unsigned int emit_call(unsigned int ofs, unsigned int pop, unsigned int save)
 }
 
 
-unsigned int emit_fix_call(unsigned int from, unsigned int to)
+void emit_fix_call(unsigned int from, unsigned int to)
 {
     /* Called only at the beginning of the code generation of the function
        where `to` points to. Therefore func_no has the correct value.
        Otherwise the number must be read from the address `to` points at:
             f = get_32bits(buf + to) */
-    return (((func_no & 2080768) << 10)
+    set_32bit(buf + from,
+            ((func_no & 2080768) << 10)
           | ((func_no & 16256) << 9)
           | ((func_no & 127) << 8)
           | 8421392);

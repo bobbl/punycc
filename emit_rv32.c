@@ -367,9 +367,9 @@ unsigned int emit_call(unsigned int ofs, unsigned int pop, unsigned int save)
     return r;
 }
 
-unsigned int emit_fix_call(unsigned int from, unsigned int to)
+void emit_fix_call(unsigned int from, unsigned int to)
 {
-    return insn_jal(1, to - from);
+    set_32bit(buf + from, insn_jal(1, to - from));
 }
 
 unsigned int emit_local_var(unsigned int init)
@@ -663,8 +663,8 @@ program_header_table:
     0050 00 10 00 00    p_align         0x1000 (4 KiByte)
 
 _start:
-    0054 
-    0058 
+    0054 ?? ?? ?? ??                    set gp register
+    0058 ?? ?? ?? ??
     005C 00 00 00 00    jal x1, main
     0064 93 68 D0 05    or x17, x0, 93
     0068 73 00 00 00    ecall

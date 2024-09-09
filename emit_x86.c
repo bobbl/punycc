@@ -494,9 +494,9 @@ unsigned int emit_call(unsigned int ofs, unsigned int pop, unsigned int save)
     return code_pos - 4;
 }
 
-unsigned int emit_fix_call(unsigned int from, unsigned int to)
+void emit_fix_call(unsigned int from, unsigned int to)
 {
-    return to - from - 4;
+    set_32bit(buf + from, to - from - 4);
 }
 
 unsigned int emit_local_var(unsigned int init)

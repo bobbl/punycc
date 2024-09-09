@@ -477,9 +477,9 @@ static unsigned int emit_call(unsigned int ofs, unsigned int pop, unsigned int s
     return r;
 }
 
-static unsigned int emit_fix_call(unsigned int from, unsigned int to)
+static void emit_fix_call(unsigned int from, unsigned int to)
 {
-    return insn_bl(to - from - 4);
+    set_32bit(buf + from, insn_bl(to - from - 4));
 }
 
 static unsigned int emit_local_var(unsigned int init)
