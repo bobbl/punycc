@@ -41,10 +41,8 @@ fi
 CC=${CC:-clang}
 QEMU_RV32=${QEMU_RV32:-qemu-riscv32}
 QEMU_ARM=${QEMU_ARM:-qemu-arm}
-QEMU_OR1K=${QEMU_OR1K:-qemu-or1k}
 
 arch_list="wasm	x86	armv6m	rv32"
-#arch_list="wasm	x86	armv6m	rv32	or1k"
 
 
 
@@ -54,7 +52,6 @@ qemu () {
         rv32)   echo "$QEMU_RV32" ;;
         armv6m) echo "$QEMU_ARM" ;;
         wasm)   echo "wasmtime" ;;
-        or1k)   echo "$QEMU_OR1K" ;;
     esac
 }
 
@@ -64,7 +61,7 @@ qemu () {
 # build punycc with the native compiler of the platform (gcc or clang)
 # $1 architecture
 compile_native () {
-    cat ../host_$1.c ../emit_$1.c ../punycc.c > punycc_$1.c
+    cat ../host_native.c ../emit_$1.c ../punycc.c > punycc_$1.c
     "$CC" -O2 -o punycc_$1.native punycc_$1.c
 }
 
@@ -241,7 +238,6 @@ do
         rv32)           arch="rv32" ;;
         armv6m)         arch="armv6m" ;;
         wasm)           arch="wasm" ;;
-        or1k)           arch="or1k" ;;
 
         compile_native) compile_native $arch ;;
         compile_all)    compile_all ;;
@@ -263,8 +259,6 @@ do
                 rv32)   riscv64-linux-gnu-objdump -b binary -m riscv -D "$2"
                         ;;
                 armv6m) arm-none-eabi-objdump -b binary -m arm -M force-thumb -D "$2"
-                        ;;
-                or1k)   or1k-elf-objdump -b binary -m or1k -EB -D "$2"
                         ;;
             esac
             shift
@@ -290,18 +284,6 @@ do
             sed -n -e 's/....:.\(..\)\(..\)\(..\)\(..\).*/\\x\4\\x\3\\x\2\\x\1/p' \
                 tmp.dump | tr -d '\n'
             echo
-            rm tmp.elf tmp.dump
-            shift
-            ;;
-
-        asm_or1k)
-            echo "$2" | or1k-elf-as - -o tmp.elf
-            or1k-elf-objdump -d tmp.elf | tail -n +8 > tmp.dump
-            cat tmp.dump
-            sed -n -e 's/....:.\(..\) \(..\) \(..\) \(..\).*/\\x\1\\x\2\\x\3\\x\4/p' \
-                tmp.dump | tr -d '\n'
-            echo
-            printf "%d\n" 0x$(cut -c 7-8,10-11,13-14,16-17 tmp.dump)
             rm tmp.elf tmp.dump
             shift
             ;;
