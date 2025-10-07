@@ -17,6 +17,16 @@ unsigned int num_params;        /* number of function parameters */
 unsigned int num_locals;        /* number of local variables in the current function */
 unsigned int num_globals;       /* number of global variables */
 
+unsigned int reg_pos;
+
+
+static void error(unsigned int no);
+/*
+201 expression stack exceeded (r3...r11)
+*/
+
+
+
 
 /* CAUTION: OpenRISC is big endian by default */
 
@@ -70,6 +80,7 @@ unsigned int emit_begin()
 {
     code_pos = 0;
     num_globals = 0;
+    reg_pos = 3;
 
     emit_n(112, "\x7f\x45\x4c\x46\x01\x02\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x5c\x00\x00\x00\x01\x00\x00\x20\x54\x00\x00\x00\x34\x00\x00\x00\x00\x00\x00\x00\x00\x00\x34\x00\x20\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x20\x00\x00\x00\x20\x00........\x00\x00\x00\x07\x00\x00\x10\x00\x18\x00\x00\x00\x18\x40\x00\x00\xa8\x42\x00\x00\x00\x00\x00\x00\x15\x00\x00\x00\xa9\x60\x00\x5d\x20\x00\x00\x00");
 
@@ -180,6 +191,7 @@ unsigned int emit_call(unsigned int ofs, unsigned int pop, unsigned int save)
         /* 04 ?? ?? ??  l.jal ? */
     emit32(352321536);
         /* 15 00 00 00  l.nop 0 */
+    reg_pos = 3;
     return cp;
 }
 
@@ -202,11 +214,19 @@ void emit_fix_call(unsigned int from, unsigned int to)
 /* push value in the accumulator to the value stack */
 void emit_push()
 {
+    reg_pos = reg_pos + 1;
+    if (reg_pos > 11) error(201); /* r3 ... r11 can be used */
 }
 
 /* set accumulator to a unsigend 32 bit number */
 void emit_number(unsigned int x)
 {
+    /* TODO: optimize for 16 bit values */
+
+    emit_odabi(6, reg_pos, 0, 0, (x >> 16) & 65535);
+        /* l.movhi REG, HI(x) */
+    emit_odabi(42, reg_pos, reg_pos, 0, x & 65535);
+        /* l.ori REG, REG, LO(x) */
 }
 
 /* Exit from the current function and return the value of the accumulator to
@@ -214,6 +234,10 @@ void emit_number(unsigned int x)
    function. */
 void emit_return()
 {
+    emit32(1140869120);
+        /* 44 00 48 00  l.jr r9 */
+    emit32(352321536);
+        /* 15 00 00 00  l.nop 0 */
 }
 
 
