@@ -267,6 +267,23 @@ void emit_arg()
    are following after the end of s. */
 void emit_string(unsigned int len, char *s)
 {
+    unsigned int aligned_len = (len + 4) & 4294967292;
+        /* there are 4 zero bytes appended to s */
+
+    emit32(3783870468);
+        /* E1 89 48 04  l.or r12,r9,r9          # save r9 */
+    emit32(insn_call(aligned_len + 8));
+        /* 04 ?? ?? ??  l.jal ? */
+    emit32(352321536);
+        /* 15 00 00 00  l.nop 0 */
+    emit_binary_func(aligned_len, s);
+
+    emit_odabi(56, reg_pos, 9, 9, 4);
+        /*              l.or REG, r9, r9 */
+    emit_odabi(56, 9, 12, 12, 4);
+        /*              l.or r9, r12, r12         # restore r9*/
+
+    /* TODO: optimize code */
 }
 
 
