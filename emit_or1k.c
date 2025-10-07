@@ -252,6 +252,7 @@ void emit_return()
    order of the arguments. */
 void emit_arg()
 {
+    emit_push();
 }
 
 
