@@ -45,17 +45,81 @@ unsigned int get_32bit(unsigned char *p)
  * Step 2: Output valid ELF file
  **********************************************************************/
 
+unsigned int emit_n(unsigned int n, char *s)
+{
+    unsigned int cp = code_pos;
+    unsigned int i = 0;
+    while (i < n) {
+        buf[cp + i] = s[i];
+        i = i + 1;
+    }
+    code_pos = cp + n;
+    return cp;
+}
+
+void emit32(unsigned int n)
+{
+    unsigned int cp = code_pos;
+    code_pos = cp + 4;
+    set_32bit(buf + cp, n);
+}
+
 /* Prepare for code generation
    Return the address of the call to main() as a forward reference */
 unsigned int emit_begin()
 {
     code_pos = 0;
-    return 0;
+    num_globals = 0;
+
+    emit_n(96, "\x7f\x45\x4c\x46\x01\x02\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x5c\x00\x00\x00\x01\x00\x00\x20\x54\x00\x00\x00\x34\x00\x00\x00\x00\x00\x00\x00\x00\x00\x34\x00\x20\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x20\x00\x00\x00\x20\x00........\x00\x00\x00\x07\x00\x00\x10\x00\xa8\x60\x00\x14\xa9\x60\x00\x5d\x20\x00\x00\x00");
+
+/*
+elf_header:
+    0000 7f 45 4c 46    e_ident         0x7F, "ELF"
+    0004 01 02 01 00                    1, 2, 1, 0  (2=bigendian)
+    0008 00 00 00 00                    0, 0, 0, 0
+    000C 00 00 00 00                    0, 0, 0, 0
+    0010 00 02          e_type          2 (executable)
+    0012 00 5C          e_machine       92 (OpenRISC)
+    0014 00 00 00 01    e_version       1
+    0018 00 00 20 54    e_entry         0x00002000 + _start
+    001C 00 00 00 34    e_phoff         program_header_table
+    0020 00 00 00 00    e_shoff         0
+    0024 00 00 00 00    e_flags         0
+    0028 00 34          e_ehsize        52 (program_header_table)
+    002A 00 20          e_phentsize     32 (start - program_header_table)
+    002C 00 01          e_phnum         1
+    002E 00 00          e_shentsize     0
+    0030 00 00          e_shnum         0
+    0032 00 00          e_shstrndx      0
+
+program_header_table:
+    0034 00 00 00 01    p_type          1 (load)
+    0038 00 00 00 00    p_offset        0
+    003C 00 00 20 00    p_vaddr         0x00002000
+    0040 00 00 20 00    p_paddr         0x00002000
+    0044 ?? ?? ?? ??    p_filesz
+    0048 ?? ?? ?? ??    p_memsz
+    004C 00 00 00 07    p_flags         7 (read, write, execute)
+    0050 00 00 10 00    p_align         0x1000 (4 KiByte)
+
+_start:
+    0054 A8 60 00 14    l.ori r3, r0, 20
+    0058 A9 60 00 5D    l.ori r11, r0, 93
+    005C 20 00 00 00    l.sys 0
+*/
+
+    return 96;
+        /* return forward reference to the call to main() beyond the code
+           to avoid corrupting any code */
 }
 
 /* Finish code generation and return the size of the compiled binary */
 unsigned int emit_end()
 {
+    /* set file and memory size in ELF header */
+    set_32bit(buf + 68, code_pos);
+    set_32bit(buf + 72, code_pos);
     return code_pos;
 }
 
