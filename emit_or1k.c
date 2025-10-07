@@ -133,6 +133,18 @@ first_function:
 /* Finish code generation and return the size of the compiled binary */
 unsigned int emit_end()
 {
+    /* set pointer to memory section for global variables */
+    unsigned int addr = code_pos + 8192;
+    set_32bit(buf + 88, 406847488 + (addr >> 16));
+        /* 18 40 ?? ??  l.movhi r2, HI */
+    set_32bit(buf + 92, 2822897664 + (addr & 65535));
+        /* A8 42 ?? ??  l.ori r2, r2, LO */
+    unsigned int i = 0;
+    while (i < num_globals) {
+        emit32(0);
+        i = i + 1;
+    }
+
     /* set file and memory size in ELF header */
     set_32bit(buf + 68, code_pos);
     set_32bit(buf + 72, code_pos);
@@ -305,6 +317,10 @@ unsigned int emit_global_var()
    ofs is the return value of emit_local_var() or emit_global_var() */
 void emit_store(unsigned int global, unsigned int ofs)
 {
+    if (global) {
+        emit_odabi(53, (ofs >> 9) & 31, 2, reg_pos, (ofs << 2) & 2047);
+            /* l.sw OFS(r2), REG */
+    }
 }
 
 /* Load accumulator from a global(1) or local(0) variable with address `ofs`
@@ -312,6 +328,10 @@ void emit_store(unsigned int global, unsigned int ofs)
    ofs is the return value of emit_local_var() or emit_global_var() */
 void emit_load(unsigned int global, unsigned int ofs)
 {
+    if (global) {
+        emit_odabi(33, reg_pos, 2, 0, ofs << 2);
+            /* l.lwz REG, OFS(r2) */
+    }
 }
 
 
