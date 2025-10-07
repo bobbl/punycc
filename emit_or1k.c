@@ -71,7 +71,7 @@ unsigned int emit_begin()
     code_pos = 0;
     num_globals = 0;
 
-    emit_n(96, "\x7f\x45\x4c\x46\x01\x02\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x5c\x00\x00\x00\x01\x00\x00\x20\x54\x00\x00\x00\x34\x00\x00\x00\x00\x00\x00\x00\x00\x00\x34\x00\x20\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x20\x00\x00\x00\x20\x00........\x00\x00\x00\x07\x00\x00\x10\x00\xa8\x60\x00\x14\xa9\x60\x00\x5d\x20\x00\x00\x00");
+    emit_n(112, "\x7f\x45\x4c\x46\x01\x02\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x5c\x00\x00\x00\x01\x00\x00\x20\x54\x00\x00\x00\x34\x00\x00\x00\x00\x00\x00\x00\x00\x00\x34\x00\x20\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x20\x00\x00\x00\x20\x00........\x00\x00\x00\x07\x00\x00\x10\x00\x18\x00\x00\x00\x18\x40\x00\x00\xa8\x42\x00\x00\x00\x00\x00\x00\x15\x00\x00\x00\xa9\x60\x00\x5d\x20\x00\x00\x00");
 
 /*
 elf_header:
@@ -104,14 +104,19 @@ program_header_table:
     0050 00 00 10 00    p_align         0x1000 (4 KiByte)
 
 _start:
-    0054 A8 60 00 14    l.ori r3, r0, 20
-    0058 A9 60 00 5D    l.ori r11, r0, 93
-    005C 20 00 00 00    l.sys 0
+    0054 18 00 00 00    l.movhi r0, 0
+    0058 18 40 ?? ??    l.movhi r2, ?   r2 points to the start of the data section
+    005C A8 42 ?? ??    l.ori r2, r2, ?
+    0060 00 00 00 00    l.jal main      but must be 0 for emit_fix_call()
+    0064 15 00 00 00    l.nop 0
+    006C A9 60 00 5D    l.ori r11, r0, 93
+    0070 20 00 00 00    l.sys 0
+
+first_function:
 */
 
     return 96;
-        /* return forward reference to the call to main() beyond the code
-           to avoid corrupting any code */
+        /* return the address of the call to main() as a forward reference */
 }
 
 /* Finish code generation and return the size of the compiled binary */
@@ -130,12 +135,35 @@ unsigned int emit_end()
  * Step 3: Call binary main function
  **********************************************************************/
 
+void emit_odabi(unsigned int o, unsigned int d, unsigned int a, unsigned int b, unsigned int i)
+{
+    emit32((o << 26) | (d << 21) | (a << 16) | (b << 11) | i);
+}
+
+void emit_mv(unsigned int d, unsigned int s)
+{
+    emit_odabi(56, d, s, s, 4);
+}
+
+unsigned int insn_disp26(unsigned int op, unsigned int disp)
+{
+    return ((disp >> 2) & 67108863)    | (op << 26);
+        /*              & 0x03ff'ffff) */
+}
+
+unsigned int insn_call(unsigned int disp)
+{
+    return insn_disp26(1, disp);
+}
+
 /* Emit a function that consists of the given binary machine code.
    The parameters are length and pointer to the machine code.
    Return the address of the beginning of the function. */
 unsigned int emit_binary_func(unsigned int n, char *s)
 {
-    return code_pos;
+    unsigned int function_begin = code_pos;
+    emit_n(n, s);
+    return function_begin;
 }
 
 /* Call the function at address `ofs`.
@@ -147,7 +175,12 @@ unsigned int emit_binary_func(unsigned int n, char *s)
    is not yet known. emit_fix_call() will overwrite this pointer later */
 unsigned int emit_call(unsigned int ofs, unsigned int pop, unsigned int save)
 {
-    return code_pos;
+    unsigned int cp = code_pos;
+    emit32(insn_call(ofs - code_pos));
+        /* 04 ?? ?? ??  l.jal ? */
+    emit32(352321536);
+        /* 15 00 00 00  l.nop 0 */
+    return cp;
 }
 
 /* Write a call instruction at the address from. The target address of the call
@@ -155,6 +188,8 @@ unsigned int emit_call(unsigned int ofs, unsigned int pop, unsigned int save)
    reserved for this call. */
 void emit_fix_call(unsigned int from, unsigned int to)
 {
+    set_32bit(buf + from, insn_call(to - from));
+        /* 04 ?? ?? ??  l.jal ? */
 }
 
 
