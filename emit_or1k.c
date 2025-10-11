@@ -358,6 +358,18 @@ void emit_load(unsigned int global, unsigned int ofs)
 */
 void emit_operation(unsigned int operation)
 {
+    reg_pos = reg_pos - 1;
+    if (operation == 10) { /* a % b = a - ((a / b) * b) */
+        emit_odabi(56, reg_pos+2, reg_pos,   reg_pos+1, 778); /* l.div r+2, r,   r+1 */
+        emit_odabi(56, reg_pos+1, reg_pos+1, reg_pos+2, 779); /* l.mul r+1, r+1, r+2 */
+        emit_odabi(56, reg_pos,   reg_pos,   reg_pos+1, 2);   /* l.sub r,   r,   r+1 */
+    }
+    else {
+        char *operation_code = " \x08\x48\x02\x04\x05\x00\x03\x0b\x0a";
+        unsigned int op = operation_code[operation];
+        if (operation > 7) op = op + 768;
+        emit_odabi(56, reg_pos, reg_pos, reg_pos+1, op);
+    }
 }
 
 
