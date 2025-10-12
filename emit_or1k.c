@@ -685,12 +685,27 @@ unsigned int emit_pre_call()
    output: push pointer to the array element */
 void emit_index_push(unsigned int global, unsigned int ofs)
 {
+    if (global) {
+        emit_odabi(33, reg_pos+1, 2, 0, ofs << 2);
+            /* l.lwz REG, OFS(r2) */
+    }
+    else {
+        emit_mv(reg_pos+1, ofs+12);
+            /* l.ori REG[reg_pos], REG[ofs+12], REG[ofs+12] */
+    }
+    emit_odabi(56, reg_pos, reg_pos, reg_pos + 1, 0);
+        /* l.add REG[reg_pos], REG[reg_pos], REG[reg_pos+1] */
+    emit_push();
 }
 
 /* pop address (from emit_index_push()) and store lowest byte of accumulator
    there */
 void emit_pop_store_array()
 {
+    /* reg_pos is always 4 at this point */
+    reg_pos = 3;
+    emit32(3624083456);
+        /* D8 03 20 00  l.sb 0(r3), r4 */
 }
 
 /* Read global(1) or local(0) variable with address `ofs` as base pointer.
@@ -698,6 +713,11 @@ void emit_pop_store_array()
    Load byte from the computed address and store in accumulator.  */
 void emit_index_load_array(unsigned int global, unsigned int ofs)
 {
+    emit_index_push(global, ofs);
+    reg_pos = reg_pos - 1;
+
+    emit_odabi(35, reg_pos, reg_pos, 0, 0);
+        /* l.lbz REG[reg_pos], OFS(REG[reg_pos]) */
 }
 
 
