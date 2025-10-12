@@ -608,6 +608,10 @@ void emit_func_end()
 unsigned int emit_local_var(unsigned int init)
 {
     num_locals = num_locals + 1;
+    if (init != 0) {
+        emit_mv(num_locals+12, reg_pos);
+            /* l.ori REG[num_locals+12], REG[reg_pos], REG[reg_pos] */
+    }
     return num_locals;
 }
 
@@ -618,13 +622,14 @@ unsigned int emit_local_var(unsigned int init)
    from the stack at the end of the scope. */
 unsigned int emit_scope_begin()
 {
-    return 0;
+    return num_locals;
 }
 
 /* Called at end of a scope (`}`).
    The parameter is the return value of the corresponding emit_scope_begin(). */
 void emit_scope_end(unsigned int stack_pos)
 {
+    num_locals = stack_pos;
 }
 
 
