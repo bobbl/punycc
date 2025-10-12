@@ -440,7 +440,13 @@ unsigned int emit_pre_while()
 */
 unsigned int emit_if(unsigned int condition)
 {
-    return code_pos;
+    set_flag(condition);
+    emit32(352321536);
+        /* 15 00 00 00  l.nop 0 */
+        /* l.bnf 0 # disp will later be fixed */
+    emit32(352321536);
+        /* 15 00 00 00  l.nop 0 */
+    return code_pos - 8;
 }
 
 /* Called at the end of a then branch without an else branch.
@@ -450,6 +456,8 @@ unsigned int emit_if(unsigned int condition)
 */
 void emit_then_end(unsigned int insn_pos)
 {
+    set_32bit(buf + insn_pos, insn_disp26(3, code_pos - insn_pos));
+        /* l.bnf */
 }
 
 /* Called at the end of an else branch.
@@ -459,6 +467,8 @@ void emit_then_end(unsigned int insn_pos)
 */
 void emit_else_end(unsigned int insn_pos)
 {
+    set_32bit(buf + insn_pos, insn_disp26(0, code_pos - insn_pos));
+        /* l.j */
 }
 
 /* Called between then and else branch of an if statement.
@@ -467,7 +477,11 @@ void emit_else_end(unsigned int insn_pos)
    Return address where the jump target address will be written later  */
 unsigned int emit_then_else(unsigned int insn_pos)
 {
-    return code_pos;
+    emit32(0); /* fix to l.j */
+    emit32(352321536);
+        /* 15 00 00 00  l.nop 0 */
+    emit_then_end(insn_pos);
+    return code_pos - 8;
 }
 
 /* Called at the end of a while loop with the value returned by
@@ -476,6 +490,10 @@ unsigned int emit_then_else(unsigned int insn_pos)
    the current address. */
 void emit_loop(unsigned int destination, unsigned int insn_pos)
 {
+    emit32(insn_disp26(0, destination - code_pos));
+    emit32(352321536);
+        /* 15 00 00 00  l.nop 0 */
+    emit_then_end(insn_pos);
 }
 
 
