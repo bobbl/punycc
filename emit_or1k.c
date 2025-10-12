@@ -379,6 +379,14 @@ void emit_operation(unsigned int operation)
  * Step 9: Compare operations
  **********************************************************************/
 
+void set_flag(unsigned int condition)
+{
+    reg_pos = reg_pos - 1;
+    char *condition_code = "\x00\x01\x04\x03\x02\x05";
+    unsigned int cond = condition_code[condition];
+    emit_odabi(57, cond, reg_pos, reg_pos+1, 0);
+}
+
 /* Pop one value from the stack and compare it with the accumulator.
    Store 1 in the accumulator if the comparison is true, otherwise 0.
 
@@ -392,6 +400,12 @@ void emit_operation(unsigned int operation)
 */
 void emit_comp(unsigned int condition)
 {
+    set_flag(condition);
+
+    emit_odabi(42, reg_pos, 0, 0, 1);
+        /* l.ori REG[regpos], r0, 1 */
+    emit_odabi(56, reg_pos, reg_pos, 0, 14);
+        /* l.cmov REG[regpos], REG[regpos], r0 */
 }
 
 
