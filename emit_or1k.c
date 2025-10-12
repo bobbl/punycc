@@ -82,7 +82,8 @@ unsigned int emit_begin()
     num_globals = 0;
     reg_pos = 3;
 
-    emit_n(112, "\x7f\x45\x4c\x46\x01\x02\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x5c\x00\x00\x00\x01\x00\x00\x20\x54\x00\x00\x00\x34\x00\x00\x00\x00\x00\x00\x00\x00\x00\x34\x00\x20\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x20\x00\x00\x00\x20\x00........\x00\x00\x00\x07\x00\x00\x10\x00\x18\x00\x00\x00\x18\x40\x00\x00\xa8\x42\x00\x00\x00\x00\x00\x00\x15\x00\x00\x00\xa9\x60\x00\x5d\x20\x00\x00\x00");
+    emit_n(312, "\x7f\x45\x4c\x46\x01\x02\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x5c\x00\x00\x00\x01\x00\x00\x20\x54\x00\x00\x00\x34\x00\x00\x00\x00\x00\x00\x00\x00\x00\x34\x00\x20\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x20\x00\x00\x00\x20\x00........\x00\x00\x00\x07\x00\x00\x10\x00\x18\x00\x00\x00\x18\x40\x00\x00\xa8\x42\x00\x00\x00\x00\x00\x00\x15\x00\x00\x00\xa9\x60\x00\x5d\x20\x00\x00\x00\x9c\x21\xff\xb0\xd4\x01\x60\x00\xd4\x01\x68\x04\xd4\x01\x70\x08\xd4\x01\x78\x0c\xd4\x01\x80\x10\xd4\x01\x88\x14\xd4\x01\x90\x18\xd4\x01\x98\x1c\xd4\x01\xa0\x20\xd4\x01\xa8\x24\xd4\x01\xb0\x28\xd4\x01\xb8\x2c\xd4\x01\xc0\x30\xd4\x01\xc8\x34\xd4\x01\xd0\x38\xd4\x01\xd8\x3c\xd4\x01\xe0\x40\xd4\x01\xe8\x44\xd4\x01\xf0\x48\xd4\x01\xf8\x4c\xe1\xa3\x18\x04\xe1\xc4\x20\x04\xe1\xe5\x28\x04\xe2\x06\x30\x04\xe2\x27\x38\x04\xe2\x48\x40\x04\x44\x00\x48\x00\x85\x21\x00\x00\x85\xa1\x00\x04\x85\xc1\x00\x08\x85\xe1\x00\x0c\x86\x01\x00\x10\x86\x21\x00\x14\x86\x41\x00\x18\x86\x61\x00\x1c\x86\x81\x00\x20\x86\xa1\x00\x24\x86\xc1\x00\x28\x86\xe1\x00\x2c\x87\x01\x00\x30\x87\x21\x00\x34\x87\x41\x00\x38\x87\x61\x00\x3c\x87\x81\x00\x40\x87\xa1\x00\x44\x87\xc1\x00\x48\x87\xe1\x00\x4c\x9c\x21\x00\x50\x44\x00\x48\x00"
+);
 
 /*
 elf_header:
@@ -122,6 +123,62 @@ _start:
     0064 15 00 00 00    l.nop 0
     006C A9 60 00 5D    l.ori r11, r0, 93
     0070 20 00 00 00    l.sys 0
+
+_function_prolog:
+   0:	9c 21 ff b0 	l.addi r1,r1,-80
+   4:	d4 01 60 00 	l.sw 0(r1),r12
+   8:	d4 01 68 04 	l.sw 4(r1),r13
+   c:	d4 01 70 08 	l.sw 8(r1),r14
+  10:	d4 01 78 0c 	l.sw 12(r1),r15
+  14:	d4 01 80 10 	l.sw 16(r1),r16
+  18:	d4 01 88 14 	l.sw 20(r1),r17
+  1c:	d4 01 90 18 	l.sw 24(r1),r18
+  20:	d4 01 98 1c 	l.sw 28(r1),r19
+  24:	d4 01 a0 20 	l.sw 32(r1),r20
+  28:	d4 01 a8 24 	l.sw 36(r1),r21
+  2c:	d4 01 b0 28 	l.sw 40(r1),r22
+  30:	d4 01 b8 2c 	l.sw 44(r1),r23
+  34:	d4 01 c0 30 	l.sw 48(r1),r24
+  38:	d4 01 c8 34 	l.sw 52(r1),r25
+  3c:	d4 01 d0 38 	l.sw 56(r1),r26
+  40:	d4 01 d8 3c 	l.sw 60(r1),r27
+  44:	d4 01 e0 40 	l.sw 64(r1),r28
+  48:	d4 01 e8 44 	l.sw 68(r1),r29
+  4c:	d4 01 f0 48 	l.sw 72(r1),r30
+  50:	d4 01 f8 4c 	l.sw 76(r1),r31
+  54:	e1 a3 18 04 	l.or r13,r3,r3
+  58:	e1 c4 20 04 	l.or r14,r4,r4
+  5c:	e1 e5 28 04 	l.or r15,r5,r5
+  60:	e2 06 30 04 	l.or r16,r6,r6
+  64:	e2 27 38 04 	l.or r17,r7,r7
+  68:	e2 48 40 04 	l.or r18,r8,r8
+  6c:	44 00 48 00 	l.jr r9
+
+_function_epilog:
+  70:	85 21 00 00 	l.lwz r9,0(r1)
+  74:	85 a1 00 04 	l.lwz r13,4(r1)
+  78:	85 c1 00 08 	l.lwz r14,8(r1)
+  7c:	85 e1 00 0c 	l.lwz r15,12(r1)
+  80:	86 01 00 10 	l.lwz r16,16(r1)
+  84:	86 21 00 14 	l.lwz r17,20(r1)
+  88:	86 41 00 18 	l.lwz r18,24(r1)
+  8c:	86 61 00 1c 	l.lwz r19,28(r1)
+  90:	86 81 00 20 	l.lwz r20,32(r1)
+  94:	86 a1 00 24 	l.lwz r21,36(r1)
+  98:	86 c1 00 28 	l.lwz r22,40(r1)
+  9c:	86 e1 00 2c 	l.lwz r23,44(r1)
+  a0:	87 01 00 30 	l.lwz r24,48(r1)
+  a4:	87 21 00 34 	l.lwz r25,52(r1)
+  a8:	87 41 00 38 	l.lwz r26,56(r1)
+  ac:	87 61 00 3c 	l.lwz r27,60(r1)
+  b0:	87 81 00 40 	l.lwz r28,64(r1)
+  b4:	87 a1 00 44 	l.lwz r29,68(r1)
+  b8:	87 c1 00 48 	l.lwz r30,72(r1)
+  bc:	87 e1 00 4c 	l.lwz r31,76(r1)
+  c0:	9c 21 00 50 	l.addi r1,r1,80
+  c4:	44 00 48 00 	l.jr r9
+
+
 
 first_function:
 */
@@ -246,8 +303,8 @@ void emit_number(unsigned int x)
    function. */
 void emit_return()
 {
-    emit32(1140869120);
-        /* 44 00 48 00  l.jr r9 */
+    emit32(insn_call(224 - code_pos));
+        /* 04 ?? ?? ??  l.jal ? */
     emit32(352321536);
         /* 15 00 00 00  l.nop 0 */
 }
@@ -321,6 +378,10 @@ void emit_store(unsigned int global, unsigned int ofs)
         emit_odabi(53, (ofs >> 9) & 31, 2, reg_pos, (ofs << 2) & 2047);
             /* l.sw OFS(r2), REG */
     }
+    else {
+        emit_mv(ofs+12, reg_pos);
+            /* l.ori REG[ofs+12], REG[reg_pos], REG[reg_pos] */
+    }
 }
 
 /* Load accumulator from a global(1) or local(0) variable with address `ofs`
@@ -331,6 +392,10 @@ void emit_load(unsigned int global, unsigned int ofs)
     if (global) {
         emit_odabi(33, reg_pos, 2, 0, ofs << 2);
             /* l.lwz REG, OFS(r2) */
+    }
+    else {
+        emit_mv(reg_pos, ofs+12);
+            /* l.ori REG[reg_pos], REG[ofs+12], REG[ofs+12] */
     }
 }
 
@@ -508,7 +573,17 @@ void emit_loop(unsigned int destination, unsigned int insn_pos)
    The return value is the address of the function entry point. */
 unsigned int emit_func_begin(unsigned int n)
 {
-    return code_pos;
+    reg_pos = 3;
+    num_locals = n;
+
+    emit32(3783870468);
+        /* E1 89 48 04  l.or r12,r9,r9 */
+    emit32(insn_call(112 - code_pos));
+        /* 04 ?? ?? ??  l.jal _function_prolog */
+    emit32(352321536);
+        /* 15 00 00 00  l.nop 0 */
+
+    return code_pos - 12;
 }
 
 /* Emit code at the end of a function.
