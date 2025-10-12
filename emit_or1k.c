@@ -260,7 +260,19 @@ unsigned int emit_call(unsigned int ofs, unsigned int pop, unsigned int save)
         /* 04 ?? ?? ??  l.jal ? */
     emit32(352321536);
         /* 15 00 00 00  l.nop 0 */
-    reg_pos = 3;
+
+    reg_pos = save;
+    if (reg_pos > 3) {
+        /* restore previously saved temporary registers */
+        emit_mv(reg_pos, 3);
+            /* l.ori REG[reg_pos], REG[3], REG[3] */
+        unsigned int i = 3;
+        while (i < reg_pos) {
+            emit_mv(i, 34 - i);
+                /* l.ori REG[i], REG[31-(i-3)], REG[31-(i-3)] */
+            i = i + 1;
+        }
+    }
     return cp;
 }
 
@@ -646,7 +658,19 @@ void emit_scope_end(unsigned int stack_pos)
    be restored. */
 unsigned int emit_pre_call()
 {
-    return 0;
+    unsigned int r = reg_pos;
+    if (r > 3) {
+        /* save currently used temporary registers */
+        unsigned int i = 3;
+        while (i < r) {
+            /* FIXME: possible register overlap */
+            emit_mv(34 - i, i);
+                /* l.ori REG[31-(i-3)], REG[i], REG[i] */
+            i = i + 1;
+        }
+    }
+    reg_pos = 3;
+    return r;
 }
 
 
