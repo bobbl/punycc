@@ -130,6 +130,7 @@ stats () {
 
 # use the clang cross compiler to build a compiler for the current arch
 test_self () {
+    compile_native $arch
     compile_cross $arch $arch
     echo $arch compiler size: $(wc -c < punycc_$arch.$arch)
 }

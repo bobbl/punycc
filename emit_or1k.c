@@ -25,7 +25,8 @@ unsigned int last_insn_type;
         9 push uimm16
        10 push uimm32
        12 push local
-       
+       14 operation
+       15 comparison
        8...15 write into the destination register
     */
 
@@ -369,20 +370,12 @@ void emit_string(unsigned int len, char *s)
     unsigned int aligned_len = (len + 4) & 4294967292;
         /* there are 4 zero bytes appended to s */
 
-    emit32(3783870468);
-        /* E1 89 48 04  l.or r12,r9,r9          # save r9 */
-    emit32(insn_call(aligned_len + 8));
-        /* 04 ?? ?? ??  l.jal ? */
-    emit32(352321536);
-        /* 15 00 00 00  l.nop 0 */
+    emit32(insn_disp26(0, aligned_len + 8));
+        /* 00 ?? ?? ??  l.j after_string? */
+    emit_odabi(42, reg_pos, 0, 0, code_pos + 8196);
+        /* l.ori REG, r0, $+4 + 0x2000 */
+        /* Don't forget to add the offset 0x2000 from the ELF header here */
     emit_binary_func(aligned_len, s);
-
-    emit_odabi(56, reg_pos, 9, 9, 4);
-        /*              l.or REG, r9, r9 */
-    emit_odabi(56, 9, 12, 12, 4);
-        /*              l.or r9, r12, r12         # restore r9*/
-
-    /* TODO: optimize code */
 }
 
 
@@ -481,12 +474,14 @@ void emit_operation(unsigned int operation)
                 emit_odabi(46, reg_pos, reg_pos, 0, ((operation-1)<<6) + (imm & 31));
                   /* l.slli r, r, imm */
                   /* l.srli r, r, imm */
+                last_insn_type = 14; /* pop operation */
                 return;
             }
             if (operation == 3) {
                 code_pos = code_pos - 4;
                 emit_odabi(39, reg_pos, reg_pos, 0, (0 - imm) & 65535);
                   /* l.addi r, r, imm */
+                last_insn_type = 14; /* pop operation */
                 return;
             }
             if (operation < 9) {
@@ -500,6 +495,7 @@ void emit_operation(unsigned int operation)
                        8 1100 2c l.muli
                       (0xc97ba >> (((operation-4) << 4) & 15)) + 32 */
                     reg_pos, reg_pos, 0, imm);
+                last_insn_type = 14; /* pop operation */
                 return;
             }
         }
@@ -517,6 +513,7 @@ void emit_operation(unsigned int operation)
 
         emit_odabi(56, reg_pos, reg_pos, b, op);
     }
+    last_insn_type = 14; /* pop operation */
 }
 
 
@@ -555,6 +552,7 @@ void set_flag(unsigned int condition)
 
         emit_odabi(57, cond, reg_pos, b, 0);
     }
+    last_insn_type = 15; /* pop comparision */
 }
 
 /* Pop one value from the stack and compare it with the accumulator.
@@ -778,16 +776,37 @@ unsigned int emit_pre_call()
    output: push pointer to the array element */
 void emit_index_push(unsigned int global, unsigned int ofs)
 {
-    if (global) {
-        emit_odabi(33, reg_pos+1, 2, 0, ofs << 2);
-            /* l.lwz REG, OFS(r2) */
+    unsigned int a = reg_pos;
+    unsigned int b = ofs + 12;
+    unsigned int imm = 32768;
+
+    if (last_insn_type == 8) { /* push uimm15 */
+        imm = last_insn & 32767;
+        code_pos = code_pos - 4;
     }
     else {
-        emit_mv(reg_pos+1, ofs+12);
-            /* l.ori REG[reg_pos], REG[ofs+12], REG[ofs+12] */
+        if (last_insn_type == 12) { /* push local */
+            a = (last_insn >> 11) & 31;
+            code_pos = code_pos - 4;
+        }
     }
-    emit_odabi(56, reg_pos, reg_pos, reg_pos + 1, 0);
-        /* l.add REG[reg_pos], REG[reg_pos], REG[reg_pos+1] */
+
+    if (global) {
+        emit_odabi(33, reg_pos+1, 2, 0, ofs << 2);
+            /* l.lwz REG[reg_pos+1], OFS(r2) */
+        b = reg_pos + 1;
+    }
+
+    if (imm <= 32767) {
+        emit_odabi(39, reg_pos, b, 0, imm);
+            /* l.addi REG[reg_pos], REG[b], imm */
+    }
+    else {
+        emit_odabi(56, reg_pos, b, a, 0);
+            /* l.add REG[reg_pos], REG[b], REG[a] */
+    }
+
+    last_insn_type = 14; /* pop operation */
     emit_push();
 }
 
@@ -810,7 +829,7 @@ void emit_index_load_array(unsigned int global, unsigned int ofs)
     reg_pos = reg_pos - 1;
 
     emit_odabi(35, reg_pos, reg_pos, 0, 0);
-        /* l.lbz REG[reg_pos], OFS(REG[reg_pos]) */
+        /* l.lbz REG[reg_pos], 0(REG[reg_pos]) */
 }
 
 
