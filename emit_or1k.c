@@ -1,7 +1,22 @@
 /**********************************************************************
  * Code generation for OpenRISC OR1K
+ **********************************************************************
+ *
+ * OpenRISC 1000 Architecture Manual:
+ * https://raw.githubusercontent.com/openrisc/doc/master/openrisc-arch-1.4-rev0.pdf
+ *
+ * Register usage
+ * --------------
+ * r0         fixed to
+ * r1         stack pointer
+ * r2         pointer to global variables
+ * r3         expression stack and function parameters and return value
+ * r4 ... r8  expression stack and function parameters
+ * r9         expression stack and return address
+ * r10...r12  expression stack
+ * r13...r31  callee-saved local variables (including copy of parameters)
+ *
  **********************************************************************/
-
 
 
 
@@ -29,7 +44,13 @@ unsigned int last_insn_type;
        15 comparison
        8...15 write into the destination register
     */
-
+unsigned int return_list;
+    /* Linked list of return statements within a function.
+       Needed, because the number of local variables */
+unsigned int max_locals;
+    /* How many callee-saved registers where used in this function */
+unsigned int function_start_pos;
+    /* Start of the current function */
 
 static void error(unsigned int no);
 /*
@@ -95,8 +116,7 @@ unsigned int emit_begin()
     num_globals = 0;
     reg_pos = 3;
 
-    emit_n(308, "\x7f\x45\x4c\x46\x01\x02\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x5c\x00\x00\x00\x01\x00\x00\x20\x54\x00\x00\x00\x34\x00\x00\x00\x00\x00\x00\x00\x00\x00\x34\x00\x20\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x20\x00\x00\x00\x20\x00........\x00\x00\x00\x07\x00\x00\x10\x00\x18\x00\x00\x00\x18\x40\x00\x00\xa8\x42\x00\x00\x00\x00\x00\x00\x15\x00\x00\x00\xa9\x60\x00\x5d\x20\x00\x00\x00\xd4\x01\xf8\x4c\xd4\x01\xf0\x48\xd4\x01\xe8\x44\xd4\x01\xe0\x40\xd4\x01\xd8\x3c\xd4\x01\xd0\x38\xd4\x01\xc8\x34\xd4\x01\xc0\x30\xd4\x01\xb8\x2c\xd4\x01\xb0\x28\xd4\x01\xa8\x24\xd4\x01\xa0\x20\xd4\x01\x98\x1c\xd4\x01\x90\x18\xe2\x48\x40\x04\xd4\x01\x88\x14\xe2\x27\x38\x04\xd4\x01\x80\x10\xe2\x06\x30\x04\xd4\x01\x78\x0c\xe1\xe5\x28\x04\xd4\x01\x70\x08\xe1\xc4\x20\x04\xd4\x01\x68\x04\xe1\xa3\x18\x04\x44\x00\x60\x00\xd4\x01\x48\x00\x87\xe1\x00\x4c\x87\xc1\x00\x48\x87\xa1\x00\x44\x87\x81\x00\x40\x87\x61\x00\x3c\x87\x41\x00\x38\x87\x21\x00\x34\x87\x01\x00\x30\x86\xe1\x00\x2c\x86\xc1\x00\x28\x86\xa1\x00\x24\x86\x81\x00\x20\x86\x61\x00\x1c\x86\x41\x00\x18\x86\x21\x00\x14\x86\x01\x00\x10\x85\xe1\x00\x0c\x85\xc1\x00\x08\x85\xa1\x00\x04\x85\x21\x00\x00\x44\x00\x48\x00\xe0\x21\x60\x00"
-);
+    emit_n(308, "\x7f\x45\x4c\x46\x01\x02\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x5c\x00\x00\x00\x01\x00\x00\x20\x54\x00\x00\x00\x34\x00\x00\x00\x00\x00\x00\x00\x00\x00\x34\x00\x20\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x20\x00\x00\x00\x20\x00........\x00\x00\x00\x07\x00\x00\x10\x00\x18\x00\x00\x00\x18\x40\x00\x00\xa8\x42\x00\x00\x00\x00\x00\x00\x15\x00\x00\x00\xa9\x60\x00\x5d\x20\x00\x00\x00\xd4\x01\xf8\x4c\xd4\x01\xf0\x48\xd4\x01\xe8\x44\xd4\x01\xe0\x40\xd4\x01\xd8\x3c\xd4\x01\xd0\x38\xd4\x01\xc8\x34\xd4\x01\xc0\x30\xd4\x01\xb8\x2c\xd4\x01\xb0\x28\xd4\x01\xa8\x24\xd4\x01\xa0\x20\xd4\x01\x98\x1c\xd4\x01\x90\x18\xe2\x48\x40\x04\xd4\x01\x88\x14\xe2\x27\x38\x04\xd4\x01\x80\x10\xe2\x06\x30\x04\xd4\x01\x78\x0c\xe1\xe5\x28\x04\xd4\x01\x70\x08\xe1\xc4\x20\x04\xd4\x01\x68\x04\xe1\xa3\x18\x04\x44\x00\x60\x00\xd4\x01\x48\x00\x87\xe1\x00\x4c\x87\xc1\x00\x48\x87\xa1\x00\x44\x87\x81\x00\x40\x87\x61\x00\x3c\x87\x41\x00\x38\x87\x21\x00\x34\x87\x01\x00\x30\x86\xe1\x00\x2c\x86\xc1\x00\x28\x86\xa1\x00\x24\x86\x81\x00\x20\x86\x61\x00\x1c\x86\x41\x00\x18\x86\x21\x00\x14\x86\x01\x00\x10\x85\xe1\x00\x0c\x85\xc1\x00\x08\x85\xa1\x00\x04\x85\x21\x00\x00\x44\x00\x48\x00\xe0\x21\x60\x00");
 
 /*
 elf_header:
@@ -276,15 +296,16 @@ unsigned int emit_call(unsigned int ofs, unsigned int pop, unsigned int save)
         /* 15 00 00 00  l.nop 0 */
 
     reg_pos = save;
-    if (reg_pos > 3) {
+    if (save > 3) {
+
+        /* set the appropriate parameter register to the function result */
+        emit_mv(save, 3); 
+
         /* restore previously saved temporary registers */
-        emit_mv(reg_pos, 3);
-            /* l.ori REG[reg_pos], REG[3], REG[3] */
-        unsigned int i = 3;
-        while (i < reg_pos) {
-            emit_mv(i, 34 - i);
-                /* l.ori REG[i], REG[31-(i-3)], REG[31-(i-3)] */
-            i = i + 1;
+        while (save > 3) {
+            save = save - 1;
+            emit_mv(save, num_locals + 12);
+            num_locals = num_locals - 1;
         }
     }
     return cp;
@@ -636,7 +657,7 @@ unsigned int emit_then_else(unsigned int insn_pos)
 {
     emit32(0);
         /* emit_else_end() will overwrite this instruction with l.j */
-   emit32(352321536);
+    emit32(352321536);
         /* 15 00 00 00  l.nop 0         # branch delay slot */
     emit_then_end(insn_pos);
     return code_pos - 8;
@@ -658,8 +679,18 @@ void emit_loop(unsigned int destination, unsigned int insn_pos)
 
 
 /**********************************************************************
- * Step 11: Access function arguments
+ * Function prologue and epilogue
+ **********************************************************************
+ * Easy solution (not used):
+ * Allways call the same prologue and epilogue routine that saves/restores
+ * all 19 registers and the return address to the stack
+ *
+ * Better solution (saves stack space and runs faster, but compiling is more
+ *                  difficult):
+ * Count the really used local variables in |max_locals| and save/restore
+ * only the used registers by entering the prolog/epiloge later.
  **********************************************************************/
+
 
 /* Emit code at the beginning of a function.
    The parameter is the number of arguments for the function.
@@ -668,17 +699,11 @@ unsigned int emit_func_begin(unsigned int n)
 {
     reg_pos = 3;
     num_locals = n;
-
-    emit32(2619473840);
-        /* 9c 21 ff b0  l.addi r1, r1, -80 */
-    emit32(insn_disp26(0, 112 - code_pos));
-        /* 00 ?? ?? ??  l.j _function_prolog */
-    emit32(2843746308 + code_pos);
-        /* a9 8c ?? ??  l.ori r12, r0, code_pos + 4 + 0x2000 */
-        /* Fill the delay slot with an explicit write of the return address
-           to r12. Don't forget to add 0x2000, the offset from the ELF header */
-
-    return code_pos - 12;
+    max_locals = n;
+    return_list = 0;
+    function_start_pos = code_pos;
+    code_pos = code_pos + 12;
+    return function_start_pos;
 }
 
 /* Exit from the current function and return the value of the accumulator to
@@ -686,17 +711,60 @@ unsigned int emit_func_begin(unsigned int n)
    function. */
 void emit_return()
 {
-    emit32(insn_disp26(0, 220 - code_pos));
-        /* 00 ?? ?? ??  l.j _function_epilog */
-    emit32(2843738112 + 80);
-        /* a9 80 00 50  l.ori r12, r0, 80 */
+    emit32(return_list);
+    emit32(0);
+    return_list = code_pos - 8;
 }
 
 /* Emit code at the end of a function.
    Typically simply emit_return() is called here. */
 void emit_func_end()
 {
+    unsigned int stack_frame_size = max_locals << 2;
+
+    /* Write call to prologe at function start.
+       Separate scope to re-use registers for local variables later. */
+    {
+        unsigned int fsp = function_start_pos;
+        unsigned int prolog_entry = 184 - stack_frame_size;
+        /* For the lowest 6 registers, the parameters are copied.
+            Don't forget them  */
+        if (max_locals < 6) {
+            prolog_entry = prolog_entry - stack_frame_size + 24;
+        }
+
+        set_32bit(buf + fsp, 2619473916 - stack_frame_size);
+            /* 9c 21 ff b0  l.addi r1, r1, 0-stack_frame_size-4 */
+            /* Save space on the stack for local variables */
+
+        set_32bit(buf + fsp + 4, insn_disp26(0, prolog_entry - fsp));
+            /* 00 ?? ?? ??  l.j _function_prolog */
+            /* Jump to the prologue to not destroy the return adress of the
+               function in r9. */
+
+        set_32bit(buf + fsp + 8, 2843746316 + fsp);
+            /* a9 8c ?? ??  l.ori r12, r0, code_pos + 4 + 0x2000 */
+            /* Fill the delay slot with an explicit write of the return address
+               to r12. Don't forget to add 0x2000, the offset from the ELF
+               header */
+    }
+
+    unsigned int pos = code_pos;
+    unsigned int next;
+
+    /* add an return in case there was no final return */
     emit_return();
+
+    /* go through linked list of return statements */
+    while (pos != 0) {
+        next = get_32bit(buf + pos);
+        set_32bit(buf + pos, insn_disp26(0, 296 - pos - stack_frame_size));
+            /* 00 ?? ?? ??  l.j _function_epilog */
+        set_32bit(buf + pos + 4, 2843738116 + stack_frame_size);
+            /* a9 80 00 50  l.ori r12, r0, stack_frame_size+4 */
+            /* Use the delay slot to write the size of the stack frame to r12 */
+        pos = next;
+    }
 }
 
 
@@ -714,8 +782,11 @@ void emit_func_end()
 unsigned int emit_local_var(unsigned int init)
 {
     num_locals = num_locals + 1;
+    if (num_locals > max_locals) {
+        max_locals = num_locals;
+    }
     if (init != 0) {
-        emit_mv(num_locals+12, reg_pos);
+        emit_mv(num_locals + 12, reg_pos);
             /* l.ori REG[num_locals+12], REG[reg_pos], REG[reg_pos] */
     }
     return num_locals;
@@ -742,26 +813,28 @@ void emit_scope_end(unsigned int stack_pos)
 
 
 /**********************************************************************
- * Step 13: Function result as argument
+ * Function call within function parameters
+ **********************************************************************
+ * If the parameter stack is not empty (reg_pos>3) when a function is called,
+ * this means that the result of this function will be used as parameter to
+ * another function (and it is not the first parameter).
+ * Therefore the parameter stack with all the parameters that were computed
+ * so far must be saved to local variables.
+ * emit_call() is responsible for restoring the parameters of the outer
+ * function after the call to the inner function.
  **********************************************************************/
 
 /* Called before pushing the arguments of a function call.
-   The return value is forwarded to emit_call().
-   Used in emit_rv32.c to save registers before using them for the function 
-   arguments. The return value tells emit_call() how many registers have to
-   be restored. */
+   The return value is forwarded to emit_call(). */
 unsigned int emit_pre_call()
 {
+    /* save currently used temporary registers in local variables */
+    unsigned int i = 3;
     unsigned int r = reg_pos;
-    if (r > 3) {
-        /* save currently used temporary registers */
-        unsigned int i = 3;
-        while (i < r) {
-            /* FIXME: possible register overlap */
-            emit_mv(34 - i, i);
-                /* l.ori REG[31-(i-3)], REG[i], REG[i] */
-            i = i + 1;
-        }
+    while (i < r) {
+        reg_pos = i;
+        emit_local_var(1);
+        i = i + 1;
     }
     reg_pos = 3;
     return r;
