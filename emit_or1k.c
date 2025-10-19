@@ -249,14 +249,44 @@ unsigned int emit_end()
  * Step 3: Call binary main function
  **********************************************************************/
 
-void emit_odabi(unsigned int o, unsigned int d, unsigned int a, unsigned int b, unsigned int i)
+void emit_odai(unsigned int o, unsigned int d, unsigned int a, unsigned int i)
 {
-    emit32((o << 26) | (d << 21) | (a << 16) | (b << 11) | i);
+    emit32((o << 26) | (d << 21) | (a << 16) | i);
+}
+
+/* Do a operation on the top register (with an immediate or another register
+   that is encoded in the immediate).
+   If previous instruction is a load of a local variable, fuse the instructions */
+void emit_odri(unsigned int o, unsigned int d, unsigned int i)
+{
+    unsigned int prev_insn = get_32bit(buf + code_pos - 4);
+    unsigned int a = reg_pos;
+
+    if ((prev_insn & 4292935679) == ((a << 21) | 3758096388)) {
+        /*           0xffe0ffff                  0xe0000004
+                             or REG[reg_pos], REG[a], r0 */
+        a = (prev_insn >> 16) & 31;
+        code_pos = code_pos - 4;
+    }
+    emit_odai(o, d, a, i);
+}
+
+/* Operation on the two topmost elements of the expression stack.
+   Optimise, if the second operand is a load from a local variable. */
+void emit_odrri(unsigned int o, unsigned int d, unsigned int i)
+{
+    unsigned int b = (reg_pos + 1) << 11;
+    if (last_insn_type == 12 /* push local */) {
+        code_pos = code_pos - 4;
+        b = (last_insn >> 5) & 63488; /* 0xf800 */
+    }
+    emit_odri(o, d, b | i);
 }
 
 void emit_mv(unsigned int d, unsigned int s)
 {
-    emit_odabi(56, d, s, s, 4);
+    emit_odai(56, d, s, 4);
+        /* l.or REG[d], REG[s], r0 */
 }
 
 unsigned int insn_disp26(unsigned int op, unsigned int disp)
@@ -338,14 +368,14 @@ void emit_push()
 void emit_number(unsigned int x)
 {
     if ((x >> 16) != 0) {
-        emit_odabi(6, reg_pos, 0, 0, x >> 16);
+        emit_odai(6, reg_pos, 0, x >> 16);
             /* l.movhi REG, HI(x) */
-        emit_odabi(42, reg_pos, reg_pos, 0, (x & 65535));
+        emit_odai(42, reg_pos, reg_pos, x & 65535);
             /* l.ori REG, REG, LO(x) */
         last_insn_type = 10; /* push uimm32 */
     }
     else {
-        emit_odabi(42, reg_pos, 0, 0, x);
+        emit_odai(42, reg_pos, 0, x);
             /* l.ori REG, r0, LO(x) */
         last_insn_type = (x > 32767) + 8; /* push uimm15 / push uimm16 */
     }
@@ -383,7 +413,7 @@ void emit_string(unsigned int len, char *s)
 
     emit32(insn_disp26(0, aligned_len + 8));
         /* 00 ?? ?? ??  l.j after_string? */
-    emit_odabi(42, reg_pos, 0, 0, code_pos + 8196);
+    emit_odai(42, reg_pos, 0, code_pos + 8196);
         /* l.ori REG, r0, $+4 + 0x2000 */
         /* Don't forget to add the offset 0x2000 from the ELF header here */
     emit_binary_func(aligned_len, s);
@@ -409,7 +439,7 @@ unsigned int emit_global_var()
 void emit_store(unsigned int global, unsigned int ofs)
 {
     if (global) {
-        emit_odabi(53, (ofs >> 9) & 31, 2, reg_pos, (ofs << 2) & 2047);
+        emit_odai(53, (ofs >> 9) & 31, 2, (reg_pos << 11) | ((ofs << 2) & 2047));
             /* l.sw OFS(r2), REG */
     }
     else {
@@ -431,7 +461,7 @@ void emit_store(unsigned int global, unsigned int ofs)
 void emit_load(unsigned int global, unsigned int ofs)
 {
     if (global) {
-        emit_odabi(33, reg_pos, 2, 0, ofs << 2);
+        emit_odai(33, reg_pos, 2, ofs << 2);
             /* l.lwz REG, OFS(r2) */
     }
     else {
@@ -452,24 +482,29 @@ void emit_load(unsigned int global, unsigned int ofs)
    Combine it with the accumulator and store the result in the accumulator.
 
    operation                    rrr     rri
-      1  <<  shift left         08      2e*
-      2  >>  shift right        48      2e*
-      3  -   subtract           02      27-
-      4  |   or                 04      2a
-      5  ^   xor                05      2b
-      6  +   add                00      27+
-      7  &   and                03      29
-      8  *   multiply           0b      2c
-      9  /   divide             0a
+      1  <<  l.sll              008     2e*
+      2  >>  l.srl     t        048     2e*
+      3  -   l.sub              002     27-
+      4  |   l.or               004     2a
+      5  ^   l.xor              005     2b
+      6  +   l.add              000     27+
+      7  &   l.and              003     29
+      8  *   l.mulu             30b     2c      l.muli
+      9  /   l.divu             30a
      10  %   modulo
 */
 void emit_operation(unsigned int operation)
 {
     reg_pos = reg_pos - 1;
     if (operation == 10) { /* a % b = a - ((a / b) * b) */
-        emit_odabi(56, reg_pos+2, reg_pos,   reg_pos+1, 778); /* l.div r+2, r,   r+1 */
-        emit_odabi(56, reg_pos+1, reg_pos+1, reg_pos+2, 779); /* l.mul r+1, r+1, r+2 */
-        emit_odabi(56, reg_pos,   reg_pos,   reg_pos+1, 2);   /* l.sub r,   r,   r+1 */
+
+        unsigned int rrr = (reg_pos << 21) | (reg_pos << 16) | (reg_pos << 11);
+        emit32(3762293514 + rrr);
+            /* E? ?? ?3 0A  l.divu r+2, r,   r+1    0xe040'0b0a+rrr */
+        emit32(3760263947 + rrr);
+            /* E? ?? ?3 0B  l.mulu r+1, r+1, r+2    0xe021'130b+rrr */
+        emit32(3758098434 + rrr);
+            /* E? ?? ?0 02  l.sub  r,   r,   r+1    0xe000'0802+rrr */
     }
     else {
 
@@ -482,7 +517,7 @@ void emit_operation(unsigned int operation)
             unsigned int imm = last_insn & 65535;
             if (operation < 3) {
                 code_pos = code_pos - 4;
-                emit_odabi(46, reg_pos, reg_pos, 0, ((operation-1)<<6) + (imm & 31));
+                emit_odri(46, reg_pos, ((operation-1)<<6) + (imm & 31));
                   /* l.slli r, r, imm */
                   /* l.srli r, r, imm */
                 last_insn_type = 14; /* pop operation */
@@ -490,14 +525,14 @@ void emit_operation(unsigned int operation)
             }
             if (operation == 3) {
                 code_pos = code_pos - 4;
-                emit_odabi(39, reg_pos, reg_pos, 0, (0 - imm) & 65535);
+                emit_odri(39, reg_pos, (0 - imm) & 65535);
                   /* l.addi r, r, imm */
                 last_insn_type = 14; /* pop operation */
                 return;
             }
             if (operation < 9) {
                 code_pos = code_pos - 4;
-                emit_odabi(
+                emit_odri(
                     ((825274 >> ((operation-4) << 2)) & 15) + 32,
                     /* 4 1010 2a l.ori
                        5 1011 2b l.xori
@@ -505,24 +540,14 @@ void emit_operation(unsigned int operation)
                        7 1001 29 l.andi
                        8 1100 2c l.muli
                       (0xc97ba >> (((operation-4) << 4) & 15)) + 32 */
-                    reg_pos, reg_pos, 0, imm);
+                    reg_pos, imm);
                 last_insn_type = 14; /* pop operation */
                 return;
             }
         }
 
         char *operation_code = " \x08\x48\x02\x04\x05\x00\x03\x0b\x0a";
-        unsigned int op = operation_code[operation];
-        if (operation > 7) op = op + 768;
-
-        /* optimisation: second operand is a local varaible */
-        unsigned int b = reg_pos + 1;
-        if (last_insn_type == 12 /* push local */) {
-            code_pos = code_pos - 4;
-            b = (last_insn >> 11) & 31;
-        }
-
-        emit_odabi(56, reg_pos, reg_pos, b, op);
+        emit_odrri(56, reg_pos, ((operation & 8)*96) + operation_code[operation]);
     }
     last_insn_type = 14; /* pop operation */
 }
@@ -550,18 +575,10 @@ void set_flag(unsigned int condition)
 
     if (last_insn_type == 8) {
         code_pos = code_pos - 4;
-        emit_odabi(47, cond, reg_pos, 0, last_insn & 32767);
+        emit_odri(47, cond, last_insn & 32767);
     }
     else {
-
-        /* optimisation: second operand is a local varaible */
-        unsigned int b = reg_pos + 1;
-        if (last_insn_type == 12 /* push local */) {
-            code_pos = code_pos - 4;
-            b = (last_insn >> 11) & 31;
-        }
-
-        emit_odabi(57, cond, reg_pos, b, 0);
+        emit_odrri(57, cond, 0);
     }
     last_insn_type = 15; /* pop comparision */
 }
@@ -581,9 +598,9 @@ void emit_comp(unsigned int condition)
 {
     set_flag(condition);
 
-    emit_odabi(42, reg_pos, 0, 0, 1);
+    emit_odai(42, reg_pos, 0, 1);
         /* l.ori REG[regpos], r0, 1 */
-    emit_odabi(56, reg_pos, reg_pos, 0, 14);
+    emit_odai(56, reg_pos, reg_pos, 14);
         /* l.cmov REG[regpos], REG[regpos], r0 */
 }
 
@@ -852,35 +869,30 @@ unsigned int emit_pre_call()
    output: push pointer to the array element */
 void emit_index_push(unsigned int global, unsigned int ofs)
 {
-    unsigned int a = reg_pos;
+    unsigned int op;
     unsigned int b = ofs + 12;
-    unsigned int imm = 32768;
+    unsigned int imm;
 
     if (last_insn_type == 8) { /* push uimm15 */
+        op = 39;
         imm = last_insn & 32767;
         code_pos = code_pos - 4;
     }
     else {
+        op = 56;
+        imm  = reg_pos << 11;
         if (last_insn_type == 12) { /* push local */
-            a = (last_insn >> 11) & 31;
+            imm = ((last_insn >> 16) & 31) << 11;
             code_pos = code_pos - 4;
         }
     }
 
     if (global) {
-        emit_odabi(33, reg_pos+1, 2, 0, ofs << 2);
+        emit_odai(33, reg_pos+1, 2, ofs << 2);
             /* l.lwz REG[reg_pos+1], OFS(r2) */
         b = reg_pos + 1;
     }
-
-    if (imm <= 32767) {
-        emit_odabi(39, reg_pos, b, 0, imm);
-            /* l.addi REG[reg_pos], REG[b], imm */
-    }
-    else {
-        emit_odabi(56, reg_pos, b, a, 0);
-            /* l.add REG[reg_pos], REG[b], REG[a] */
-    }
+    emit_odai(op, reg_pos, b, imm);
 
     last_insn_type = 14; /* pop operation */
     emit_push();
@@ -903,8 +915,7 @@ void emit_index_load_array(unsigned int global, unsigned int ofs)
 {
     emit_index_push(global, ofs);
     reg_pos = reg_pos - 1;
-
-    emit_odabi(35, reg_pos, reg_pos, 0, 0);
+    emit_odri(35, reg_pos, 0);
         /* l.lbz REG[reg_pos], 0(REG[reg_pos]) */
 }
 
