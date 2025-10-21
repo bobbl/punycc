@@ -798,11 +798,14 @@ void emit_func_end()
                header */
     }
 
-    unsigned int pos = code_pos;
+    unsigned int pos = code_pos - 8;
     unsigned int next;
 
     /* add an return in case there was no final return */
-    emit_return();
+    if ((return_list != pos) | (last_branch_target == code_pos)) {
+        pos = code_pos;
+        emit_return();
+    }
 
     /* go through linked list of return statements */
     while (pos != 0) {
