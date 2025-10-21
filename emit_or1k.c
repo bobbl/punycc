@@ -20,10 +20,6 @@
 
 
 
-/**********************************************************************
- * Step 1: Preparations for new ISA
- **********************************************************************/
-
 unsigned int buf_size;          /* total size of the buffer */
 unsigned char *buf;             /* pointer to the buffer */
 unsigned int code_pos;          /* position in the buffer for code generation */
@@ -247,13 +243,6 @@ unsigned int emit_end()
     return code_pos;
 }
 
-
-
-
-/**********************************************************************
- * Step 3: Call binary main function
- **********************************************************************/
-
 void emit_odai(unsigned int o, unsigned int d, unsigned int a, unsigned int i)
 {
     emit32((o << 26) | (d << 21) | (a << 16) | i);
@@ -284,8 +273,10 @@ unsigned int fuse_load_local(unsigned int reg)
 {
     unsigned int b = reg << 11;
     if (last_insn_type == 12 /* push local */) {
-        code_pos = code_pos - 4;
-        b = (last_insn >> 5) & 63488; /* 0xf800 */
+        if (code_pos > last_branch_target) {
+            code_pos = code_pos - 4;
+            b = (last_insn >> 5) & 63488; /* 0xf800 */
+        }
     }
     return b;
 }
@@ -298,21 +289,13 @@ void emit_odrri(unsigned int o, unsigned int d, unsigned int i)
     emit_odri(o, d, b | i);
 }
 
-void emit_mv(unsigned int d, unsigned int s)
-{
-    emit_odai(56, d, s, 4);
-        /* l.or REG[d], REG[s], r0 */
-}
-
 unsigned int insn_disp26(unsigned int op, unsigned int disp)
+/* op 0x0000'0000         0  l.j
+      0x0400'0000  67108864  l.jal
+      0x0C00'0000 201326592  l.bnf */
 {
-    return ((disp >> 2) & 67108863)    | (op << 26);
+    return ((disp >> 2) & 67108863) | op;
         /*              & 0x03ff'ffff) */
-}
-
-unsigned int insn_call(unsigned int disp)
-{
-    return insn_disp26(1, disp);
 }
 
 /* Emit a function that consists of the given binary machine code.
@@ -325,6 +308,8 @@ unsigned int emit_binary_func(unsigned int n, char *s)
     return function_begin;
 }
 
+/* Emit a jump or call and put the last instruction in the branch delay slot
+   if possible. */
 void fill_delay_slot(unsigned int op, unsigned int destination)
 {
     unsigned int cp = code_pos;
@@ -351,19 +336,22 @@ void fill_delay_slot(unsigned int op, unsigned int destination)
    is not yet known. emit_fix_call() will overwrite this pointer later */
 unsigned int emit_call(unsigned int ofs, unsigned int pop, unsigned int save)
 {
-    fill_delay_slot(1, ofs);
+    fill_delay_slot(67108864, ofs); /* l.jal */
 
     reg_pos = save;
     if (save > 3) {
 
         /* set the appropriate parameter register to the function result */
-        emit_mv(save, 3); 
+        emit_odai(56, save, 3, 4);
+            /* l.or REG[save], r3, r0 */
 
         /* restore previously saved temporary registers */
-        while (save > 3) {
-            save = save - 1;
-            emit_mv(save, num_locals + 12);
+        unsigned int r = 3;
+        while (r < save) {
+            emit_odai(56, r, num_locals + 12, 4);
+                /* l.or REG[r], REG[num_locals + 12], r0 */
             num_locals = num_locals - 1;
+            r = r + 1;
         }
     }
     return code_pos - 8;
@@ -374,16 +362,8 @@ unsigned int emit_call(unsigned int ofs, unsigned int pop, unsigned int save)
    reserved for this call. */
 void emit_fix_call(unsigned int from, unsigned int to)
 {
-    set_32bit(buf + from, insn_call(to - from));
-        /* 04 ?? ?? ??  l.jal ? */
+    set_32bit(buf + from, insn_disp26(67108864, to - from)); /* l.jal */
 }
-
-
-
-
-/**********************************************************************
- * Step 4: Main function with return 40
- **********************************************************************/
 
 /* push value in the accumulator to the value stack */
 void emit_push()
@@ -398,8 +378,11 @@ void emit_number(unsigned int x)
     if ((x >> 16) != 0) {
         emit_odai(6, reg_pos, 0, x >> 16);
             /* l.movhi REG, HI(x) */
-        emit_odai(42, reg_pos, reg_pos, x & 65535);
+        x = x & 65535;
+        if (x != 0) {
+            emit_odai(42, reg_pos, reg_pos, x);
             /* l.ori REG, REG, LO(x) */
+        }
         last_insn_type = 10; /* push uimm32 */
     }
     else {
@@ -408,13 +391,6 @@ void emit_number(unsigned int x)
         last_insn_type = (x > 32767) + 8; /* push uimm15 / push uimm16 */
     }
 }
-
-
-
-
-/**********************************************************************
- * Step 5: Call library function to exit
- **********************************************************************/
 
 /* Emit code to put the value from the accumulator at the right location for
    an function argument. That could be a stack or a register. It is called in
@@ -462,25 +438,31 @@ unsigned int emit_global_var()
     return num_globals - 1;
 }
 
+
+void pop_to_reg(unsigned int dest_reg)
+{
+    if (last_insn_type > 7) {
+        code_pos = code_pos - 4;
+        emit32((last_insn & 4229955583) | (dest_reg << 21));
+            /* (last_insn & 0xfc1fffff) | (dest_reg << 21)); */
+    } else {
+        emit_odai(56, dest_reg, reg_pos, 4);
+            /* l.ori REG[dest_reg], REG[reg_pos], r0 */
+    }
+}
+
 /* Store accumulator in a global(1) or local(0) variable with address `ofs`
    Function arguments have global=0 and ofs=1,2,3,... For other variables,
    ofs is the return value of emit_local_var() or emit_global_var() */
 void emit_store(unsigned int global, unsigned int ofs)
 {
     if (global) {
-        unsigned int b = fuse_load_local(reg_pos);
-        emit_odai(53, (ofs >> 9) & 31, 2, b | ((ofs << 2) & 2047));
+        unsigned int i = fuse_load_local(reg_pos) | ((ofs << 2) & 2047);
+        emit_odai(53, (ofs >> 9) & 31, 2, i);
             /* l.sw OFS(r2), REG */
     }
     else {
-        if (last_insn_type > 7) {
-            code_pos = code_pos - 4;
-            emit32((last_insn & 4229955583) | ((ofs+12) << 21));
-                /* (last_insn & 0xfc1fffff) | ((ofs+12) << 21)); */
-        } else {
-            emit_mv(ofs+12, reg_pos);
-                /* l.ori REG[ofs+12], REG[reg_pos], REG[reg_pos] */
-        }
+        pop_to_reg(ofs + 12);
     }
     last_insn_type = 1; /* pop and store */
 }
@@ -496,8 +478,8 @@ void emit_load(unsigned int global, unsigned int ofs)
         last_insn_type = 13; /* push global */
     }
     else {
-        emit_mv(reg_pos, ofs+12);
-            /* l.ori REG[reg_pos], REG[ofs+12], REG[ofs+12] */
+        emit_odai(56, reg_pos, ofs + 12, 4);
+            /* l.ori REG[reg_pos], REG[ofs+12], r0 */
         last_insn_type = 12; /* push local */
     }
 }
@@ -527,7 +509,46 @@ void emit_load(unsigned int global, unsigned int ofs)
 void emit_operation(unsigned int operation)
 {
     reg_pos = reg_pos - 1;
-    if (operation == 10) { /* a % b = a - ((a / b) * b) */
+    if (operation < 9) {
+
+        /* optimisation: second operand is an immediate */
+        if (last_insn_type == 8 /* push uimm15 */) {
+            /* set accu to immediate < 32K
+               In some caseses immediates < 64K would also be possible, but
+               checking the special cases is too difficult */
+
+            unsigned int op = ((3380324334 >> ((operation-1) << 2)) & 15) + 32;
+                    /* 1 1110 2e l.slli
+                       2 1110 2e l.slri
+                       3 0111 27 l.addi
+                       4 1010 2a l.ori
+                       5 1011 2b l.xori
+                       6 0111 27 l.addi
+                       7 1001 29 l.andi
+                       8 1100 2c l.muli
+                      (0xc97b'a7ee >> (((operation-1) << 4) & 15)) + 32 */
+            unsigned int imm = last_insn & 65535;
+            code_pos = code_pos - 4;
+            if (operation < 3) {
+                imm = ((operation-1)<<6) + (imm & 31);
+                  /* l.slli r, r, imm */
+                  /* l.srli r, r, imm */
+            }
+            else if (operation == 3) {
+                imm = (0 - imm) & 65535;
+                  /* l.addi r, r, imm */
+            }
+            emit_odri(op, reg_pos, imm);
+        }
+        else {
+            char *operation_code = " \x08\x48\x02\x04\x05\x00\x03\x0b";
+            emit_odrri(56, reg_pos, ((operation & 8)*96) + operation_code[operation]);
+        }
+    }
+    else if (operation == 9) {
+        emit_odrri(56, reg_pos, 778); /* l.divu */
+    }
+    else { /* a % b = a - ((a / b) * b) */
 
         unsigned int rrr = (reg_pos << 21) | (reg_pos << 16) | (reg_pos << 11);
         emit32(3762293514 + rrr);
@@ -536,49 +557,6 @@ void emit_operation(unsigned int operation)
             /* E? ?? ?3 0B  l.mulu r+1, r+1, r+2    0xe021'130b+rrr */
         emit32(3758098434 + rrr);
             /* E? ?? ?0 02  l.sub  r,   r,   r+1    0xe000'0802+rrr */
-    }
-    else {
-
-        /* optimisation: second operand is an immediate */
-        if (last_insn_type == 8 /* push uimm15 */) {
-            /* set accu to immediate < 32K
-               In some caseses immediates < 64K would also be possible, but
-               checking the special cases is too difficult */
-
-            unsigned int imm = last_insn & 65535;
-            if (operation < 3) {
-                code_pos = code_pos - 4;
-                emit_odri(46, reg_pos, ((operation-1)<<6) + (imm & 31));
-                  /* l.slli r, r, imm */
-                  /* l.srli r, r, imm */
-                last_insn_type = 14; /* pop operation */
-                return;
-            }
-            if (operation == 3) {
-                code_pos = code_pos - 4;
-                emit_odri(39, reg_pos, (0 - imm) & 65535);
-                  /* l.addi r, r, imm */
-                last_insn_type = 14; /* pop operation */
-                return;
-            }
-            if (operation < 9) {
-                code_pos = code_pos - 4;
-                emit_odri(
-                    ((825274 >> ((operation-4) << 2)) & 15) + 32,
-                    /* 4 1010 2a l.ori
-                       5 1011 2b l.xori
-                       6 0111 27 l.addi
-                       7 1001 29 l.andi
-                       8 1100 2c l.muli
-                      (0xc97ba >> (((operation-4) << 4) & 15)) + 32 */
-                    reg_pos, imm);
-                last_insn_type = 14; /* pop operation */
-                return;
-            }
-        }
-
-        char *operation_code = " \x08\x48\x02\x04\x05\x00\x03\x0b\x0a";
-        emit_odrri(56, reg_pos, ((operation & 8)*96) + operation_code[operation]);
     }
     last_insn_type = 14; /* pop operation */
 }
@@ -672,6 +650,7 @@ unsigned int emit_if(unsigned int condition)
         /* emit_then_end() will overwrite this instruction with l.bnf */
     emit32(352321536);
         /* 15 00 00 00  l.nop 0         # branch delay slot */
+        /* TODO: fill this delay slot */
     last_branch_target = code_pos;
     return code_pos - 8;
 }
@@ -683,7 +662,7 @@ unsigned int emit_if(unsigned int condition)
 */
 void emit_then_end(unsigned int insn_pos)
 {
-    set_32bit(buf + insn_pos, insn_disp26(3, code_pos - insn_pos));
+    set_32bit(buf + insn_pos, insn_disp26(201326592, code_pos - insn_pos));
         /* l.bnf */
     last_branch_target = code_pos;
 }
@@ -777,7 +756,7 @@ void emit_func_end()
         unsigned int fsp = function_start_pos;
         unsigned int prolog_entry = 184 - stack_frame_size;
         /* For the lowest 6 registers, the parameters are copied.
-            Don't forget them  */
+           Don't forget them  */
         if (max_locals < 6) {
             prolog_entry = prolog_entry - stack_frame_size + 24;
         }
@@ -833,15 +812,17 @@ void emit_func_end()
    must be set accordingly. */
 unsigned int emit_local_var(unsigned int init)
 {
-    num_locals = num_locals + 1;
-    if (num_locals > max_locals) {
-        max_locals = num_locals;
+    unsigned int n = num_locals + 1;
+    num_locals = n;
+    if (n > max_locals) {
+        max_locals = n;
     }
     if (init != 0) {
-        emit_mv(num_locals + 12, reg_pos);
-            /* l.ori REG[num_locals+12], REG[reg_pos], REG[reg_pos] */
+        pop_to_reg(n + 12);
+            /* l.or REG[num_locals+12], REG[reg_pos], r0 
+               or fuse with previous instruction */
     }
-    return num_locals;
+    return n;
 }
 
 /* Called at the beginning of a scope (`{`).
@@ -881,14 +862,11 @@ void emit_scope_end(unsigned int stack_pos)
 unsigned int emit_pre_call()
 {
     /* save currently used temporary registers in local variables */
-    unsigned int i = 3;
     unsigned int r = reg_pos;
-    while (i < r) {
-        reg_pos = i;
+    while (reg_pos > 3) {
+        reg_pos = reg_pos - 1;
         emit_local_var(1);
-        i = i + 1;
     }
-    reg_pos = 3;
     return r;
 }
 
@@ -904,22 +882,18 @@ unsigned int emit_pre_call()
    output: push pointer to the array element */
 void emit_index_push(unsigned int global, unsigned int ofs)
 {
-    unsigned int op;
+    unsigned int op = 56;
     unsigned int b = ofs + 12;
-    unsigned int imm;
+    unsigned int imm = reg_pos << 11;
 
     if (last_insn_type == 8) { /* push uimm15 */
         op = 39;
         imm = last_insn & 32767;
         code_pos = code_pos - 4;
     }
-    else {
-        op = 56;
-        imm  = reg_pos << 11;
-        if (last_insn_type == 12) { /* push local */
-            imm = ((last_insn >> 16) & 31) << 11;
-            code_pos = code_pos - 4;
-        }
+    else if (last_insn_type == 12) { /* push local */
+        imm = ((last_insn >> 16) & 31) << 11;
+        code_pos = code_pos - 4;
     }
 
     if (global) {
