@@ -40,6 +40,7 @@ unsigned int last_insn_type;
         9 push uimm16
        10 push uimm32
        12 push local
+       13 push global
        14 operation
        15 comparison
        8...15 write into the destination register
@@ -277,15 +278,23 @@ void emit_odri(unsigned int o, unsigned int d, unsigned int i)
     emit_odai(o, d, a, i);
 }
 
-/* Operation on the two topmost elements of the expression stack.
-   Optimise, if the second operand is a load from a local variable. */
-void emit_odrri(unsigned int o, unsigned int d, unsigned int i)
+/* If last instruction is a load from a local variable to reg, return the
+   register number of the local variable instead of reg. */
+unsigned int fuse_load_local(unsigned int reg)
 {
-    unsigned int b = (reg_pos + 1) << 11;
+    unsigned int b = reg << 11;
     if (last_insn_type == 12 /* push local */) {
         code_pos = code_pos - 4;
         b = (last_insn >> 5) & 63488; /* 0xf800 */
     }
+    return b;
+}
+
+/* Operation on the two topmost elements of the expression stack.
+   Optimise, if the second operand is a load from a local variable. */
+void emit_odrri(unsigned int o, unsigned int d, unsigned int i)
+{
+    unsigned int b = fuse_load_local(reg_pos + 1);
     emit_odri(o, d, b | i);
 }
 
@@ -459,7 +468,8 @@ unsigned int emit_global_var()
 void emit_store(unsigned int global, unsigned int ofs)
 {
     if (global) {
-        emit_odai(53, (ofs >> 9) & 31, 2, (reg_pos << 11) | ((ofs << 2) & 2047));
+        unsigned int b = fuse_load_local(reg_pos);
+        emit_odai(53, (ofs >> 9) & 31, 2, b | ((ofs << 2) & 2047));
             /* l.sw OFS(r2), REG */
     }
     else {
@@ -483,6 +493,7 @@ void emit_load(unsigned int global, unsigned int ofs)
     if (global) {
         emit_odai(33, reg_pos, 2, ofs << 2);
             /* l.lwz REG, OFS(r2) */
+        last_insn_type = 13; /* push global */
     }
     else {
         emit_mv(reg_pos, ofs+12);
