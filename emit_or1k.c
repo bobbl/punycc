@@ -51,6 +51,9 @@ unsigned int max_locals;
     /* How many callee-saved registers where used in this function */
 unsigned int function_start_pos;
     /* Start of the current function */
+unsigned int last_branch_target;
+    /* Last address that was the target of a jump instruction */
+
 
 static void error(unsigned int no);
 /*
@@ -115,6 +118,7 @@ unsigned int emit_begin()
     code_pos = 0;
     num_globals = 0;
     reg_pos = 3;
+    last_branch_target = 0;
 
     emit_n(308, "\x7f\x45\x4c\x46\x01\x02\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x5c\x00\x00\x00\x01\x00\x00\x20\x54\x00\x00\x00\x34\x00\x00\x00\x00\x00\x00\x00\x00\x00\x34\x00\x20\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x20\x00\x00\x00\x20\x00........\x00\x00\x00\x07\x00\x00\x10\x00\x18\x00\x00\x00\x18\x40\x00\x00\xa8\x42\x00\x00\x00\x00\x00\x00\x15\x00\x00\x00\xa9\x60\x00\x5d\x20\x00\x00\x00\xd4\x01\xf8\x4c\xd4\x01\xf0\x48\xd4\x01\xe8\x44\xd4\x01\xe0\x40\xd4\x01\xd8\x3c\xd4\x01\xd0\x38\xd4\x01\xc8\x34\xd4\x01\xc0\x30\xd4\x01\xb8\x2c\xd4\x01\xb0\x28\xd4\x01\xa8\x24\xd4\x01\xa0\x20\xd4\x01\x98\x1c\xd4\x01\x90\x18\xe2\x48\x40\x04\xd4\x01\x88\x14\xe2\x27\x38\x04\xd4\x01\x80\x10\xe2\x06\x30\x04\xd4\x01\x78\x0c\xe1\xe5\x28\x04\xd4\x01\x70\x08\xe1\xc4\x20\x04\xd4\x01\x68\x04\xe1\xa3\x18\x04\x44\x00\x60\x00\xd4\x01\x48\x00\x87\xe1\x00\x4c\x87\xc1\x00\x48\x87\xa1\x00\x44\x87\x81\x00\x40\x87\x61\x00\x3c\x87\x41\x00\x38\x87\x21\x00\x34\x87\x01\x00\x30\x86\xe1\x00\x2c\x86\xc1\x00\x28\x86\xa1\x00\x24\x86\x81\x00\x20\x86\x61\x00\x1c\x86\x41\x00\x18\x86\x21\x00\x14\x86\x01\x00\x10\x85\xe1\x00\x0c\x85\xc1\x00\x08\x85\xa1\x00\x04\x85\x21\x00\x00\x44\x00\x48\x00\xe0\x21\x60\x00");
 
@@ -262,11 +266,13 @@ void emit_odri(unsigned int o, unsigned int d, unsigned int i)
     unsigned int prev_insn = get_32bit(buf + code_pos - 4);
     unsigned int a = reg_pos;
 
-    if ((prev_insn & 4292935679) == ((a << 21) | 3758096388)) {
-        /*           0xffe0ffff                  0xe0000004
-                             or REG[reg_pos], REG[a], r0 */
-        a = (prev_insn >> 16) & 31;
-        code_pos = code_pos - 4;
+    if (code_pos > last_branch_target) {
+        if ((prev_insn & 4292935679) == ((a << 21) | 3758096388)) {
+            /*           0xffe0ffff                  0xe0000004
+                                 or REG[reg_pos], REG[a], r0 */
+            a = (prev_insn >> 16) & 31;
+            code_pos = code_pos - 4;
+        }
     }
     emit_odai(o, d, a, i);
 }
@@ -310,6 +316,23 @@ unsigned int emit_binary_func(unsigned int n, char *s)
     return function_begin;
 }
 
+void fill_delay_slot(unsigned int op, unsigned int destination)
+{
+    unsigned int cp = code_pos;
+    unsigned int slot_insn = 352321537; /* 15 00 00 01  l.nop 1 */
+
+    if (last_branch_target < cp) {
+        cp = cp - 4;
+        slot_insn = last_insn;
+        code_pos = cp;
+    }
+
+    emit32(insn_disp26(op, destination - cp));
+        /* l.j / l.jal */
+    emit32(slot_insn);
+    last_branch_target = code_pos;
+}
+
 /* Call the function at address `ofs`.
    Then remove `pop` values from the stack.
    `save` is the return value from the corresponding emit_pre_call(). It can be
@@ -319,11 +342,7 @@ unsigned int emit_binary_func(unsigned int n, char *s)
    is not yet known. emit_fix_call() will overwrite this pointer later */
 unsigned int emit_call(unsigned int ofs, unsigned int pop, unsigned int save)
 {
-    unsigned int cp = code_pos;
-    emit32(insn_call(ofs - code_pos));
-        /* 04 ?? ?? ??  l.jal ? */
-    emit32(352321536);
-        /* 15 00 00 00  l.nop 0 */
+    fill_delay_slot(1, ofs);
 
     reg_pos = save;
     if (save > 3) {
@@ -338,7 +357,7 @@ unsigned int emit_call(unsigned int ofs, unsigned int pop, unsigned int save)
             num_locals = num_locals - 1;
         }
     }
-    return cp;
+    return code_pos - 8;
 }
 
 /* Write a call instruction at the address from. The target address of the call
@@ -417,6 +436,7 @@ void emit_string(unsigned int len, char *s)
         /* l.ori REG, r0, $+4 + 0x2000 */
         /* Don't forget to add the offset 0x2000 from the ELF header here */
     emit_binary_func(aligned_len, s);
+    last_branch_target = code_pos;
 }
 
 
@@ -444,9 +464,9 @@ void emit_store(unsigned int global, unsigned int ofs)
     }
     else {
         if (last_insn_type > 7) {
-            set_32bit(buf + code_pos - 4,
+            code_pos = code_pos - 4;
+            emit32((last_insn & 4229955583) | ((ofs+12) << 21));
                 /* (last_insn & 0xfc1fffff) | ((ofs+12) << 21)); */
-                (last_insn & 4229955583) | ((ofs+12) << 21));
         } else {
             emit_mv(ofs+12, reg_pos);
                 /* l.ori REG[ofs+12], REG[reg_pos], REG[reg_pos] */
@@ -641,6 +661,7 @@ unsigned int emit_if(unsigned int condition)
         /* emit_then_end() will overwrite this instruction with l.bnf */
     emit32(352321536);
         /* 15 00 00 00  l.nop 0         # branch delay slot */
+    last_branch_target = code_pos;
     return code_pos - 8;
 }
 
@@ -653,6 +674,7 @@ void emit_then_end(unsigned int insn_pos)
 {
     set_32bit(buf + insn_pos, insn_disp26(3, code_pos - insn_pos));
         /* l.bnf */
+    last_branch_target = code_pos;
 }
 
 /* Called at the end of an else branch.
@@ -664,6 +686,7 @@ void emit_else_end(unsigned int insn_pos)
 {
     set_32bit(buf + insn_pos, insn_disp26(0, code_pos - insn_pos));
         /* l.j */
+    last_branch_target = code_pos;
 }
 
 /* Called between then and else branch of an if statement.
@@ -672,10 +695,9 @@ void emit_else_end(unsigned int insn_pos)
    Return address where the jump target address will be written later  */
 unsigned int emit_then_else(unsigned int insn_pos)
 {
-    emit32(0);
-        /* emit_else_end() will overwrite this instruction with l.j */
-    emit32(352321536);
-        /* 15 00 00 00  l.nop 0         # branch delay slot */
+    fill_delay_slot(0, 0); 
+        /* branch target doesn't care, because emit_else_end() will overwrite
+           this instruction with l.j */
     emit_then_end(insn_pos);
     return code_pos - 8;
 }
@@ -686,9 +708,7 @@ unsigned int emit_then_else(unsigned int insn_pos)
    the current address. */
 void emit_loop(unsigned int destination, unsigned int insn_pos)
 {
-    emit32(insn_disp26(0, destination - code_pos));
-    emit32(352321536);
-        /* 15 00 00 00  l.nop 0         # branch delay slot */
+    fill_delay_slot(0, destination);
     emit_then_end(insn_pos);
 }
 
@@ -720,6 +740,7 @@ unsigned int emit_func_begin(unsigned int n)
     return_list = 0;
     function_start_pos = code_pos;
     code_pos = code_pos + 12;
+    last_branch_target = code_pos;
     return function_start_pos;
 }
 
