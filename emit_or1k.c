@@ -155,35 +155,33 @@ _start:
     005C a8 42 ?? ??    l.ori r2, r2, ?
     0060 00 00 00 00    l.jal main      but must be 0 for emit_fix_call()
     0064 15 00 00 00    l.nop 0
-    006c a9 60 00 5D    l.ori r11, r0, 93
-    0070 20 00 00 00    l.sys 0
+    0068 a9 60 00 5D    l.ori r11, r0, 93
+    006C 20 00 00 00    l.sys 0
 
 _function_prolog:
-    0074 d4 01 f8 4c    l.sw 76(r1), r31
-    0078 d4 01 f0 48    l.sw 72(r1), r30
-    007C d4 01 e8 44    l.sw 68(r1), r29
-    0080 d4 01 e0 40    l.sw 64(r1), r28
-
-  40:	d4 01 d8 3c 	l.sw 60(r1),r27
-  3c:	d4 01 d0 38 	l.sw 56(r1),r26
-  38:	d4 01 c8 34 	l.sw 52(r1),r25
-  34:	d4 01 c0 30 	l.sw 48(r1),r24
-  30:	d4 01 b8 2c 	l.sw 44(r1),r23
-  2c:	d4 01 b0 28 	l.sw 40(r1),r22
-  28:	d4 01 a8 24 	l.sw 36(r1),r21
-  24:	d4 01 a0 20 	l.sw 32(r1),r20
-  20:	d4 01 98 1c 	l.sw 28(r1),r19
-  1c:	d4 01 90 18 	l.sw 24(r1),r18
-  68:	e2 48 40 04 	l.or r18,r8,r8
-  18:	d4 01 88 14 	l.sw 20(r1),r17
-  64:	e2 27 38 04 	l.or r17,r7,r7
-  14:	d4 01 80 10 	l.sw 16(r1),r16
-  60:	e2 06 30 04 	l.or r16,r6,r6
-  10:	d4 01 78 0c 	l.sw 12(r1),r15
-  5c:	e1 e5 28 04 	l.or r15,r5,r5
-   c:	d4 01 70 08 	l.sw 8(r1),r14
-  58:	e1 c4 20 04 	l.or r14,r4,r4
-
+    0070 d4 01 f8 4c    l.sw 76(r1), r31
+    0074 d4 01 f0 48    l.sw 72(r1), r30
+    0078 d4 01 e8 44    l.sw 68(r1), r29
+    007C d4 01 e0 40    l.sw 64(r1), r28
+    0080 d4 01 d8 3c    l.sw 60(r1), r27
+    0084 d4 01 d0 38    l.sw 56(r1), r26
+    0088 d4 01 c8 34    l.sw 52(r1), r25
+    008C d4 01 c0 30    l.sw 48(r1), r24
+    0090 d4 01 b8 2c    l.sw 44(r1), r23
+    0094 d4 01 b0 28    l.sw 40(r1), r22
+    0098 d4 01 a8 24    l.sw 36(r1), r21
+    009C d4 01 a0 20    l.sw 32(r1), r20
+    00A0 d4 01 98 1c    l.sw 28(r1), r19
+    00A4 d4 01 90 18    l.sw 24(r1), r18
+    00A8 e2 48 40 04    l.or r18, r8, r8
+    00AC d4 01 88 14    l.sw 20(r1), r17
+    00B0 e2 27 38 04    l.or r17, r7, r7
+    00B4 d4 01 80 10    l.sw 16(r1), r16
+    00B8 e2 06 30 04    l.or r16, r6, r6
+    00BC d4 01 78 0c    l.sw 12(r1), r15
+    00C0 e1 e5 28 04    l.or r15, r5, r5
+    00C4 d4 01 70 08    l.sw 8(r1), r14
+    00C8 e1 c4 20 04    l.or r14, r4, r4
     00CC d4 01 68 04    l.sw 4(r1), r13
     00D0 e1 a3 18 04    l.or r13, r3, r3
     00D4 44 00 60 00    l.jr r12
@@ -194,25 +192,23 @@ _function_epilog:
     00E0 87 c1 00 48    l.lwz r30, 72(r1)
     00E4 87 a1 00 44    l.lwz r29, 68(r1)
     00E8 87 81 00 40    l.lwz r28, 64(r1)
-
-  ac:	87 61 00 3c 	l.lwz r27,60(r1)
-  a8:	87 41 00 38 	l.lwz r26,56(r1)
-  a4:	87 21 00 34 	l.lwz r25,52(r1)
-  a0:	87 01 00 30 	l.lwz r24,48(r1)
-  9c:	86 e1 00 2c 	l.lwz r23,44(r1)
-  98:	86 c1 00 28 	l.lwz r22,40(r1)
-  94:	86 a1 00 24 	l.lwz r21,36(r1)
-  90:	86 81 00 20 	l.lwz r20,32(r1)
-  8c:	86 61 00 1c 	l.lwz r19,28(r1)
-  88:	86 41 00 18 	l.lwz r18,24(r1)
-  84:	86 21 00 14 	l.lwz r17,20(r1)
-  80:	86 01 00 10 	l.lwz r16,16(r1)
-  7c:	85 e1 00 0c 	l.lwz r15,12(r1)
-  78:	85 c1 00 08 	l.lwz r14,8(r1)
-
+    00EC 87 61 00 3c    l.lwz r27,60(r1)
+    00F0 87 41 00 38    l.lwz r26,56(r1)
+    00F4 87 21 00 34    l.lwz r25,52(r1)
+    00F8 87 01 00 30    l.lwz r24,48(r1)
+    00FC 86 e1 00 2c    l.lwz r23,44(r1)
+    0100 86 c1 00 28    l.lwz r22,40(r1)
+    0104 86 a1 00 24    l.lwz r21,36(r1)
+    0108 86 81 00 20    l.lwz r20,32(r1)
+    010C 86 61 00 1c    l.lwz r19,28(r1)
+    0110 86 41 00 18    l.lwz r18,24(r1)
+    0114 86 21 00 14    l.lwz r17,20(r1)
+    0118 86 01 00 10    l.lwz r16,16(r1)
+    011C 85 e1 00 0c    l.lwz r15,12(r1)
+    0120 85 c1 00 08    l.lwz r14,8(r1)
     0124 85 a1 00 04    l.lwz r13, 4(r1)
     0128 85 21 00 00    l.lwz r9, 0(r1)
-    012c 44 00 48 00    l.jr r9
+    012C 44 00 48 00    l.jr r9
     0130 e0 21 60 00    l.add r1, r1, r12
 
 first_function:
@@ -404,7 +400,7 @@ void emit_arg()
 
 
 /**********************************************************************
- * Step 6: String constants
+ * String constants
  **********************************************************************/
 
 /* Store string somewhere in the binary and set accumulator to its address.
@@ -428,7 +424,7 @@ void emit_string(unsigned int len, char *s)
 
 
 /**********************************************************************
- * Step 7: Global variables
+ * Global variables
  **********************************************************************/
 
 /* Reserve memory for a global variable and return its address */
@@ -488,7 +484,7 @@ void emit_load(unsigned int global, unsigned int ofs)
 
 
 /**********************************************************************
- * Step 8: Arithmetic operations
+ * Arithmetic operations
  **********************************************************************/
 
 /* Pop one value from the stack.
@@ -565,7 +561,7 @@ void emit_operation(unsigned int operation)
 
 
 /**********************************************************************
- * Step 9: Compare operations
+ * Compare operations
  **********************************************************************/
 
 void set_flag(unsigned int condition)
@@ -617,7 +613,7 @@ void emit_comp(unsigned int condition)
 
 
 /**********************************************************************
- * Step 10: if and while
+ * if and while
  **********************************************************************/
 
 /* Called at the beginning of a while loop, before the condition.
@@ -802,7 +798,7 @@ void emit_func_end()
 
 
 /**********************************************************************
- * Step 12: Local variables
+ * Local variables
  **********************************************************************/
 
 /* Reserve memory for a local variable and return its address.
@@ -874,7 +870,7 @@ unsigned int emit_pre_call()
 
 
 /**********************************************************************
- * Step 14: Arrays
+ * Arrays
  **********************************************************************/
 
 /* input:  global(1) or local(0) variable used as a pointer
