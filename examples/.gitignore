@@ -1,0 +1,5 @@
+*.armv6m
+*.or1k
+*.rv32
+*.wasm
+*.x86
