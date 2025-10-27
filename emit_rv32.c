@@ -1,5 +1,27 @@
 /**********************************************************************
- * Code Generation for RV32IM
+ * Code generation for RV32IM
+ **********************************************************************
+ * Second attempt: fill and spill registers
+ *
+ * RISC-V Instruction Set Manual:
+ * https://github.com/riscv/riscv-isa-manual/
+ *
+ * RISC-V ABI:
+ * https://github.com/riscv-non-isa/riscv-elf-psabi-doc
+ *
+ * Register usage
+ * --------------
+ * x0        zero       fixed to
+ * x1        ra         return address
+ * x2        sp         stack pointer
+ * x3        gp         pointer to global variables
+ * x4        tp         (thread pointer)
+ * x5 ... x7 t0 ... t2  expression stack
+ * x8 ... x9 s0 ... s1  callee-saved local variables (including copy of parameters)
+ * x10...x17 a0 ... a7  expression stack and function parameters
+ * x18...x27 s2 ...s11  callee-saved local variables (including copy of parameters)
+ * x28...x31 t3 ... t6  expression stack
+ *
  **********************************************************************/
 
 
@@ -18,12 +40,16 @@ unsigned int function_start_pos;
 unsigned int num_scope;
 unsigned int num_calls;
 unsigned int max_reg_pos;
-unsigned int addsp_list;
+unsigned int return_list;
 
 unsigned int last_branch_target;
     /* Position where the last branch points to.
        Used to determine the length of the last uninterrupted sequences of
        instructions. */
+
+char *local_reg;
+
+
 
 
 
@@ -129,32 +155,60 @@ void emit_string(unsigned int len, char *s)
     emit_binary_func(aligned_len, s);
 }
 
+
+void store_local(unsigned int ofs)
+{
+    if (ofs < 13) {
+        emit_isdo(0, reg_pos, local_reg[ofs], 19);
+            /* ADDI REG[local_reg[ofs]], REG[reg_pos], 0 */
+    }
+    else {
+        emit_stype(10559523 + ((reg_pos-10) << 20), ofs);
+            /* SW REG[reg_pos], (ofs+1)(SP) */
+    }
+}
+
 void emit_store(unsigned int global, unsigned int ofs)
 {
     /* reg_pos is always 10 at this point */
-    emit_stype(10559523 + (global << 15), ofs);
-        /* SW A0, (ofs+1)(REG[2+global]) */
+    if (global == 0) {
+        store_local(ofs);
+    }
+    else {
+        emit_stype(10559523 + (global << 15), ofs);
+            /* SW A0, (ofs+1)(REG[2+global]) */
+    }
+}
+
+void load_local(unsigned int ofs)
+{
+    if (ofs < 13) {
+        emit_isdo(0, local_reg[ofs], reg_pos, 19);
+            /* ADDI REG[reg_pos], REG[local_reg[ofs]], 0 */
+    }
+    else {
+        emit_isdo(ofs << 2, 0, reg_pos, 73731);
+            /* LW reg_pos, ofs(SP) */
+    }
 }
 
 void emit_load(unsigned int global, unsigned int ofs)
 {
-/*  Accumulate the constant adds to the arguments in the opcode:
-    emit_insn_lw(reg_pos, global + 2, ofs + 1);
-    emit_isdo((ofs + 1)<<2, global + 2, reg_pos, 8195);
-*/
-    emit_isdo(ofs << 2, global, reg_pos, 73731);
-        /* LW reg_pos, ofs(REG[2+global]) */
+    if (global == 0) {
+        load_local(ofs);
+    }
+    else {
+        emit_isdo(ofs << 2, global, reg_pos, 73731);
+            /* LW reg_pos, ofs(REG[2+global]) */
+    }
 }
 
 void emit_index_push(unsigned int global, unsigned int ofs)
 {
-    emit_isdo(ofs << 2, global, reg_pos, 73859);
-        /* LW REG[reg_pos+1], ofs(REG[2+global]) */
-
-    emit_isdo(reg_pos, reg_pos, reg_pos, 1048627);
-        /* ADD REG[reg_pos], REG[reg_pos], REG[reg_pos+1] */
-
     emit_push();
+    emit_load(global, ofs);
+    emit_isdo(reg_pos, reg_pos-1, reg_pos-1, 51);
+        /* ADD REG[reg_pos-1], REG[reg_pos-1], REG[reg_pos] */
 }
 
 void emit_pop_store_array()
@@ -317,17 +371,34 @@ static void emit_loop(unsigned int destination, unsigned int insn_pos)
     emit_then_end(insn_pos);
 }
 
-unsigned int emit_pre_call()
-/* save temporary registers and return how many */
+unsigned int emit_local_var(unsigned int init)
 {
+    unsigned int n = num_locals + 1;
+    num_locals = n;
+    if (n > max_locals) max_locals = n;
+
+    if (init != 0) {                                 /* set initial value */
+        emit_store(0, n);
+    }
+
+    return n;
+}
+
+unsigned int emit_global_var()
+{
+    num_globals = num_globals + 1;
+    return num_globals - 513;
+}
+
+unsigned int emit_pre_call()
+{
+    /* save parameter stack it it is not empty */
     unsigned int r = reg_pos;
     if (r > 10) {
-        /* save currently used temporary registers */
-        unsigned int i = 10;
-        while (i < r) {
-            emit_stype(73763 + (i << 20), num_locals + i - 9);
-                /* SW REG[i], (num_locals+i+1-10)(SP) */
-            i = i + 1;
+        /* save currently used parameter registers */
+        while (reg_pos > 10) {
+            reg_pos = reg_pos - 1;
+            emit_local_var(1);
         }
     }
     reg_pos = 10;
@@ -339,31 +410,26 @@ void emit_arg()
     emit_push();
 }
 
-void update_locals(unsigned int n)
-{
-    if (n > max_locals) max_locals = n;
-
-}
-
 unsigned int emit_call(unsigned int ofs, unsigned int pop, unsigned int save)
 {
     unsigned int r = code_pos;
     emit32(insn_jal(1, ofs - code_pos));
-    reg_pos = save;
     num_calls = num_calls + 1;
 
-    update_locals(num_locals + reg_pos - 10);
-    if (reg_pos > 10) {
-        /* restore previously saved temporary registers */
-        emit32((reg_pos << 7) + 327699);
+    if (save > 10) {
+        /* restore previously saved parameter registers */
+        emit32((save << 7) + 327699);
             /* 000500513  MV REG[reg_pos], A0 */
-        unsigned int i = 10;
-        while (i < reg_pos) {
-            emit_isdo((num_locals+i)<<2, 2, i, 4257226755);
-                /* LW REG[i], (num_locals+1+i-10)(SP) */
-            i = i + 1;
+
+        reg_pos = 10;
+        while (reg_pos < save) {
+            load_local(num_locals);
+            reg_pos = reg_pos + 1;
+            num_locals = num_locals - 1;
         }
     }
+
+    reg_pos = save;
     return r;
 }
 
@@ -372,67 +438,45 @@ void emit_fix_call(unsigned int from, unsigned int to)
     set_32bit(buf + from, insn_jal(1, to - from));
 }
 
-unsigned int emit_local_var(unsigned int init)
-{
-    num_locals = num_locals + 1;
-    update_locals(num_locals);
-
-    if (init != 0) {                                 /* set initial value */
-        emit_stype(10559523, num_locals);
-        /* SW A0, num_locals(SP) */
-    }
-
-    return num_locals;
-}
-
-unsigned int emit_global_var()
-{
-    num_globals = num_globals + 1;
-    return num_globals - 513;
-}
-
 unsigned int emit_func_begin(unsigned int n)
 {
-    function_start_pos = code_pos;
+    unsigned int cp0 = code_pos;
+    unsigned int cp8 = cp0 + 8;
+    function_start_pos = cp0;
     reg_pos = 10;
     max_reg_pos = 10;
     num_locals = n;
-    max_locals = 0;
+    max_locals = n;
     num_scope = 0;
     num_calls = 0;
-    addsp_list = 0;
+    return_list = 0;
 
-    emit32(0);                  /* 00010113  ADD SP, SP, max_locals+1 */
-    emit32(1122339);            /* 00112023  SW  RA, 0(SP) */
-    update_locals(n); 
-        /* if there is at least one parameter, overwrite ADD SP, SP, -8 */
+    last_branch_target = cp8;
+    code_pos = cp8;
+        /* The first two instructions will be written by emit_func_end,
+           when the number of local variables is known. */
 
-    /* Store arguments from registers to stack
-       IMPORTANT: The registers are stored in reverse order (a2, a1, a0).
-       Not an issue when storing them to the stack. But when the code is
-       refactored and the arguments are stored in registers, the register
-       numbers might overlap (e.g. in emit_isdo()).
-     */
-    while (n != 0) {
-        emit_stype(9510947 + (n << 20), n);
-            /* SW REG[n-1+10], (4*n)(SP) */
-        n = n - 1;
-    }
-
-    return function_start_pos;
+    return cp0;
 }
 
 void restore_sp()
 {
     emit32(73859);              /* 00412083  lw ra, 0(sp) */
-    emit32(addsp_list);         /* 00010113  add sp, sp, MAX_LOCALS+1 */
-    addsp_list = code_pos - 4;
+    emit32(return_list);         /* 00010113  add sp, sp, MAX_LOCALS+1 */
+    return_list = code_pos - 4;
 }
 
 void emit_return()
 {
-    unsigned int prev_insn = get_32bit(buf + code_pos - 4);
+    emit32(return_list);         /* 00010113  add sp, sp, MAX_LOCALS+1 */
+    return_list = code_pos - 4;
+    emit32(insn_jal(0, 192 - code_pos));
+        /* j _epilogue */
+    return;
 
+
+    /* TODO */
+    unsigned int prev_insn = get_32bit(buf + code_pos - 4);
     if (last_branch_target != code_pos) {
         /* precondition: no if or else branch to the current position */
 
@@ -456,161 +500,46 @@ void emit_return()
     }
     restore_sp();
     emit32(32871);          /* 00008067  RET */
-}
 
-void refactor(unsigned int start_pos, unsigned int end_pos)
-{
-    unsigned int i = start_pos;
-    while (i < end_pos) {
-        unsigned int insn = get_32bit(buf + i);
-        if (insn == 73859) {                  /* 00412083 LW RA,0(SP) */
-            /* Next instruction is always
-                00010113  ADD SP, SP, max_locals+1
-               which must be removed, too */
-            i = i + 4;
-            insn = get_32bit(buf + i + 4);
-
-            /* adjust target if tail call */
-            if ((insn & 4095) == 111) {    /* xxxxx06F  JAL X0, xxxxx*/
-                i = i + 4;
-                unsigned int disp = extract_jal_disp(insn) + i - code_pos;
-                emit32(insn_jal(0, disp));
-            }
-        }
-        else if ((insn & 1044575) == 73731) { 
-            /*         & 0xFF05F) == 0x12003 */
-
-            /* load or store local variable */
-            if ((insn & 32) != 0) {
-                /* store */
-                unsigned int reg_for_var =
-                    (((insn >> 9) & 7) + ((insn >> 26) << 3)) + max_reg_pos;
-                unsigned int prev_insn = get_32bit(buf + code_pos - 4);
-                unsigned int prev_opcode = prev_insn & 127;
-
-                if (((((prev_insn >> 7) & 31) == 10) &
-                     ((prev_opcode == 19) |        /* arith with immediate */
-                      (prev_opcode == 51))) != 0)  /* arith with reg */
-                {
-                    code_pos = code_pos - 4;
-                    emit32((prev_insn & 4294963327) | (reg_for_var << 7));
-                        /* FFFFF07F */
-                }
-                else {
-                    emit32((insn & 32505856) | (reg_for_var << 7) | 16435);
-                        /*       & 0x01F0'0000                    | 0x4033 */
-                        /* XOR REG[ofs], X0, REG */
-                }
-            }
-            else {
-                /* load */
-                unsigned int reg_for_var = (insn >> 22) + max_reg_pos;
-                unsigned int next_insn = get_32bit(buf + i + 4);
-                unsigned int next_opcode = next_insn & 127;
-                unsigned int rd = (insn >> 7) & 31;
-
-                if (((next_insn == 11862051) |  /* 00B50023  SB A1,0(A0) */
-                     (next_opcode == 51) |      /* arith with reg */
-                     (next_opcode == 99)) != 0) /* branch */
-                {
-                    emit32((next_insn & 4262461439) | (reg_for_var << 20));
-                        /*            & 0xFE0FFFFF */
-                    i = i + 4;
-                }
-                else if (((next_opcode == 19) &
-                    (((next_insn >> 15) & 31) == rd)) != 0) /* 1st.rd == 2nd.rs1 */
-                {
-                    /* arith with immediate */
-                    emit32((next_insn & 4293951487) | (reg_for_var << 15));
-                        /*            & 0xFFF07FFF */
-                    i = i + 4;
-                }
-                else {
-                    emit32((insn & 3968) | (reg_for_var << 15) | 16435);
-                        /*       & 0x0F80                      | 0x4033 */
-                        /* XOR REG, REG[ofs], X0 */
-                }
-            }
-        }
-        else {
-            emit32(insn);
-        }
-        i = i + 4;
-    }
-}
-
-void walk_through(unsigned int start_pos, unsigned int end_pos)
-{
-    unsigned int branch_pos = start_pos;
-
-    /* search next branch */
-    while (branch_pos < end_pos) {
-        unsigned int insn = get_32bit(buf + branch_pos);
-        branch_pos = branch_pos + 4;
-        if ((insn & 127) == 99) { /* & 0x7f) == 0x63  branch*/
-            unsigned int branch_target =  ((insn & 128) << 4) +
-                                      ((insn >> 20) & 2016) +
-                                      ((insn >> 7) & 28) +
-                                        branch_pos - 4;
-            insn = get_32bit(buf + branch_target - 4);
-
-            if ((insn & 4095) == 111) { /* JAL X0, */
-                unsigned int jump_target = extract_jal_disp(insn) + branch_target - 4;
-
-                if ((insn >> 31) != 0) { /* jump backward => while loop */
-                    refactor(start_pos, jump_target);
-                    unsigned int new_loop_pos = code_pos;
-                    refactor(jump_target, branch_pos);
-                    unsigned int new_exit_pos = code_pos - 4;
-                    walk_through(branch_pos, branch_target - 4);
-                    emit_loop(new_loop_pos, new_exit_pos);
-                    branch_pos = branch_target;
-                }
-                else { /* jump forward => else branch */
-                    refactor(start_pos, branch_pos);
-                    unsigned int new_branch_pos = code_pos - 4;
-                    walk_through(branch_pos, branch_target - 4);
-                    unsigned int new_not_else_pos = code_pos;
-                    emit_loop(0, new_branch_pos);
-                    walk_through(branch_target, jump_target);
-                    emit_else_end(new_not_else_pos);
-                    branch_pos = jump_target;
-                }
-            }
-            else {
-                refactor(start_pos, branch_pos);
-                unsigned int new_branch_pos = code_pos - 4;
-                walk_through(branch_pos, branch_target);
-                emit_then_end(new_branch_pos);
-                branch_pos = branch_target;
-            }
-            start_pos = branch_pos;
-        }
-    }
-    refactor(start_pos, end_pos);
 }
 
 void emit_func_end()
 {
+    unsigned int n = ((max_locals + 4) >> 2) << 2;
+        /* stack pointer must be a multiple of 16 */
+
     emit_return();
 
-    if (((num_calls == 0) & (max_reg_pos + num_locals < 32)) != 0) {
-        unsigned int function_end_pos = code_pos;
-        code_pos = function_start_pos;
-        walk_through(function_start_pos + 8, function_end_pos);
-    }
-    else {
-        set_32bit(buf + function_start_pos, 4290838803 - (max_locals << 22));
-            /* FFC10113  ADD SP, SP, -4*(max_locals+1) */
 
-        unsigned int insn = (max_locals << 22) + 4260115;
-            /* 00010113  ADD SP, SP, 4*(max_locals+1) */
-        unsigned int next = addsp_list;
-        while (next != 0) {
-            unsigned char *p = buf + next;
-            next = get_32bit(p);
-            set_32bit(p, insn);
-        }
+    /* set stack reservation at start of function */
+    set_32bit(buf + function_start_pos, 4290838803 - ((n-1) << 22));
+        /* FFC10113  ADD SP, SP, -4*n */
+
+    /* entry to prologue depends on number of local variables */
+    unsigned int entry = 100 - function_start_pos;
+    if (max_locals < 9) {
+        entry = entry + 80 - (max_locals << 3);
+    } else if (num_locals < 12) {
+        entry = entry + 48 - (max_locals << 2);
+    }
+    unsigned int insn_jal5 = insn_jal(5, entry);
+        /* J _prologue */
+    set_32bit(buf + function_start_pos + 4, insn_jal5);
+
+
+
+    /* go throught list of return statements */
+    unsigned int insn_li = (n << 22) + 659;
+        /* 00000593  ADDI X5, X0, 4*n */
+    unsigned int next = return_list;
+    while (next != 0) {
+        unsigned char *p = buf + next;
+        unsigned int insn_j = insn_jal(0, 236 - (max_locals << 2) - next);
+            /* J _epilogue + 4*(12-num_locals) */
+
+        next = get_32bit(p);
+        set_32bit(p, insn_li);
+        set_32bit(p+4, insn_j);
     }
 }
 
@@ -631,7 +560,8 @@ unsigned int emit_begin()
     code_pos = 0;
     num_globals = 0;
     last_branch_target = 0;
-    emit_binary_func(104, "\x7f\x45\x4c\x46\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\xf3\x00\x01\x00\x00\x00\x54\x00\x01\x00\x34\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x34\x00\x20\x00\x01\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x01\x00........\x07\x00\x00\x00\x00\x10\x00\x00\x13\x00\x00\x00\x13\x00\x00\x00\x00\x00\x00\x00\x93\x68\xd0\x05\x73\x00\x00\x00");
+    local_reg = " \x08\x09\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b";
+    emit_binary_func(252, "\x7f\x45\x4c\x46\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\xf3\x00\x01\x00\x00\x00\x54\x00\x01\x00\x34\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x34\x00\x20\x00\x01\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x01\x00........\x07\x00\x00\x00\x00\x10\x00\x00\x13\x00\x00\x00\x13\x00\x00\x00\x00\x00\x00\x00\x93\x68\xd0\x05\x73\x00\x00\x00\x23\x28\xb1\x03\x23\x26\xa1\x03\x23\x24\x91\x03\x23\x22\x81\x03\x23\x20\x71\x03\x93\x8b\x08\x00\x23\x2e\x61\x01\x13\x0b\x08\x00\x23\x2c\x51\x01\x93\x8a\x07\x00\x23\x2a\x41\x01\x13\x0a\x07\x00\x23\x28\x31\x01\x93\x89\x06\x00\x23\x26\x21\x01\x13\x09\x06\x00\x23\x24\x91\x00\x93\x84\x05\x00\x23\x22\x81\x00\x13\x04\x05\x00\x23\x20\x11\x00\x67\x80\x02\x00\x83\x2d\x01\x03\x03\x2d\xc1\x02\x83\x2c\x81\x02\x03\x2c\x41\x02\x83\x2b\x01\x02\x03\x2b\xc1\x01\x83\x2a\x81\x01\x03\x2a\x41\x01\x83\x29\x01\x01\x03\x29\xc1\x00\x83\x24\x81\x00\x03\x24\x41\x00\x83\x20\x01\x00\x33\x01\x51\x00\x67\x80\x00\x00");
 /*
 elf_header:
     0000 7f 45 4c 46    e_ident         0x7F, "ELF"
@@ -666,8 +596,49 @@ _start:
     0054 ?? ?? ?? ??                    set gp register
     0058 ?? ?? ?? ??
     005C 00 00 00 00    jal x1, main
-    0064 93 68 D0 05    or x17, x0, 93
-    0068 73 00 00 00    ecall
+    0060 93 68 D0 05    or x17, x0, 93
+    0064 73 00 00 00    ecall
+
+_prologue:
+    0068 23 28 b1 03    sw      s11,48(sp)
+   4:   03a12623                sw      s10,44(sp)
+   8:   03912423                sw      s9,40(sp)
+   c:   03812223                sw      s8,36(sp)
+  10:   03712023                sw      s7,32(sp)
+  14:   00088b93                mv      s7,a7
+  18:   01612e23                sw      s6,28(sp)
+  1c:   00080b13                mv      s6,a6
+  20:   01512c23                sw      s5,24(sp)
+  24:   00078a93                mv      s5,a5
+  28:   01412a23                sw      s4,20(sp)
+  2c:   00070a13                mv      s4,a4
+  30:   01312823                sw      s3,16(sp)
+  34:   00068993                mv      s3,a3
+  38:   01212623                sw      s2,12(sp)
+  3c:   00060913                mv      s2,a2
+  40:   00912423                sw      s1,8(sp)
+  44:   00058493                mv      s1,a1
+  48:   00812223                sw      s0,4(sp)
+  4c:   00050413                mv      s0,a0
+  50:   00112023                sw      ra,0(sp)
+    00BC 67 80 02 00    jr      t0
+
+_epilogue:
+    00C0 83 2d 01 03    lw      s11,48(sp)
+  5c:   02c12d03                lw      s10,44(sp)
+  60:   02812c83                lw      s9,40(sp)
+  64:   02412c03                lw      s8,36(sp)
+  68:   02012b83                lw      s7,32(sp)
+  6c:   01c12b03                lw      s6,28(sp)
+  70:   01812a83                lw      s5,24(sp)
+  74:   01412a03                lw      s4,20(sp)
+  78:   01012983                lw      s3,16(sp)
+  7c:   00c12903                lw      s2,12(sp)
+  80:   00812483                lw      s1,8(sp)
+  84:   00412403                lw      s0,4(sp)
+  88:   00012083                lw      ra,0(sp)
+  8c:   00510133                add     sp,sp,t0
+    00F8 67 80 00 00    ret
 */
 
     return 92;
