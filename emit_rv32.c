@@ -270,17 +270,16 @@ void emit_operation(unsigned int operation)
     else if (t == 10) o = 33583155 + 1048576;     / * % remu  02107033 * /
 */
 
-    unsigned int imm = reg_pos;
-        /*    reg_pos+1      But +1 is added to opcode */
+    unsigned int imm = reg_pos + 1;
     char *code_arith = "    \x33\x10\x10\x00\x33\x50\x10\x00\x33\x00\x10\x40\x33\x60\x10\x00\x33\x40\x10\x00\x33\x00\x10\x00\x33\x70\x10\x00\x33\x00\x10\x02\x33\x50\x10\x02\x33\x70\x10\x02"; 
-    unsigned int op = get_32bit((unsigned char *)code_arith + (operation<<2));
+    unsigned int op = get_32bit((unsigned char *)code_arith + (operation<<2))
+        - 1048576; /* correction from a previous optimisation (rd+1) */
 
     /* code optimization if second operand is a load from register */
     if (last_insn_type == 11) { /* push reg */
-        imm = ((last_insn >> 15) & 31) - 1;
+        imm = ((last_insn >> 15) & 31);
         code_pos = code_pos - 4;
     }
-    
 
     /* code optimization for constant immediates */
     if (operation < 8) {
@@ -462,6 +461,7 @@ unsigned int emit_call(unsigned int ofs, unsigned int pop, unsigned int save)
             num_locals = num_locals - 1;
         }
     }
+    last_insn_type = 0; /* avoid fusion with next instruction */
 
     reg_pos = save;
     return r;
@@ -493,88 +493,48 @@ unsigned int emit_func_begin(unsigned int n)
     return cp0;
 }
 
-void restore_sp()
-{
-    emit32(73859);              /* 00412083  lw ra, 0(sp) */
-    emit32(return_list);         /* 00010113  add sp, sp, MAX_LOCALS+1 */
-    return_list = code_pos - 4;
-}
-
 void emit_return()
 {
-    emit32(return_list);         /* 00010113  add sp, sp, MAX_LOCALS+1 */
+    emit32(return_list);
+        /* will be overwritten by a jump to the end of the function */
     return_list = code_pos - 4;
-    emit32(insn_jal(0, 192 - code_pos));
-        /* j _epilogue */
-    return;
-
-
-    /* TODO */
-    unsigned int prev_insn = get_32bit(buf + code_pos - 4);
-    if (last_branch_target != code_pos) {
-        /* precondition: no if or else branch to the current position */
-
-        /* Do not generate anything if the last instruction was a return */
-        if (prev_insn == 32871) return;
-
-        /* Tail call optimisation:
-           If the last instruction was a (already resolved) call */
-        if ((prev_insn & 4095) == 239)
-                    /* & 0xFFF) == 0x0EF JAL RA,*/
-        {
-            code_pos = code_pos - 4;
-            restore_sp();
-            unsigned int disp = extract_jal_disp(prev_insn);
-            emit32(insn_jal(0, disp - 8));
-
-            num_calls = num_calls - 1;
-                /* enables more "locals in variable" optimisations */
-            return;
-        }
-    }
-    restore_sp();
-    emit32(32871);          /* 00008067  RET */
-
 }
 
 void emit_func_end()
 {
-    unsigned int n = ((max_locals + 4) >> 2) << 2;
-        /* stack pointer must be a multiple of 16 */
+    unsigned int m = max_locals;
 
-    emit_return();
-
-
-    /* set stack reservation at start of function */
-    set_32bit(buf + function_start_pos, 4290838803 - ((n-1) << 22));
-        /* FFC10113  ADD SP, SP, -4*n */
+    /* Set stack reservation at start of function.
+       Stack pointer must be a multiple of 16.
+       Shift by 20 is an optimisation to save the imm field shift */
+    unsigned int stack_size = ((m + 4) >> 2) << 24;
+    set_32bit(buf + function_start_pos, 65811 - stack_size);
+        /* 00010113  ADD SP, SP, 0-stack_size */
 
     /* entry to prologue depends on number of local variables */
     unsigned int entry = 100 - function_start_pos;
-    if (max_locals < 9) {
-        entry = entry + 80 - (max_locals << 3);
-    } else if (num_locals < 12) {
-        entry = entry + 48 - (max_locals << 2);
+    if (m < 9) {
+        entry = entry + 80 - (m << 3);
+    } else if (m < 12) {
+        entry = entry + 48 - (m << 2);
     }
-    unsigned int insn_jal5 = insn_jal(5, entry);
+    entry = insn_jal(5, entry);
         /* J _prologue */
-    set_32bit(buf + function_start_pos + 4, insn_jal5);
-
-
+    set_32bit(buf + function_start_pos + 4, entry);
 
     /* go throught list of return statements */
-    unsigned int insn_li = (n << 22) + 659;
-        /* 00000593  ADDI X5, X0, 4*n */
     unsigned int next = return_list;
     while (next != 0) {
-        unsigned char *p = buf + next;
-        unsigned int insn_j = insn_jal(0, 236 - (max_locals << 2) - next);
-            /* J _epilogue + 4*(12-num_locals) */
-
-        next = get_32bit(p);
-        set_32bit(p, insn_li);
-        set_32bit(p+4, insn_j);
+        unsigned int pos = next;
+        next = get_32bit(buf + pos);
+        set_32bit(buf + pos, insn_jal(0, code_pos - pos));
     }
+
+    /* emit jump to epilogue */
+    emit32(stack_size + 659);
+        /* 00000593  ADDI X5, X0, stack_size */
+    emit32(insn_jal(0, 240 - (m << 2) - code_pos));
+        /* J _epilogue + 4*(12-num_locals) */
 }
 
 unsigned int emit_scope_begin()
