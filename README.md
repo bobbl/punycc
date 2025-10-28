@@ -6,7 +6,7 @@ Puny C Compiler
 Very small cross compiler for a subset of C.
 
 Features
-  * Supported target and host architectures: **WebAssembly**, **RISC-V RV32IM**, **ARMv6-M (Thumb-2)**
+  * Supported target and host architectures: **OpenRISC**, **WebAssembly**, **RISC-V RV32IM**, **ARMv6-M (Thumb-2)**
     and **x86-32**.
   * Valid source code for Puny C is also valid C99 and can be written in a way
     that gcc or clang compile it without any warning.
@@ -14,17 +14,28 @@ Features
     architectures.
   * Fast compilation, small code size.
 
-Inspired by
-  * [cc500](https://github.com/8l/cc500) -
-    a tiny self-hosting C compiler by Edmund Grimley Evans
-  * [Obfuscated Tiny C Compiler](https://bellard.org/otcc/) -
-    very small self compiling C compiler by Fabrice Bellard
-  * [Tiny C Compiler](https://savannah.nongnu.org/projects/tinycc) -
-    a small but hyper fast C compiler.
-  * [Compiler Construction](https://people.inf.ethz.ch/wirth/CompilerConstruction/index.html) -
-    brief but comprehensive book by Niklaus Wirth.
 
-Language restrictions
+
+Compiler Size
+--------------
+
+PunyCC can compile itself. There is a separate compiler executable for every
+host and target combination. Host is the architecture where the compiler runs
+and target is the ISA of the compiled binary. Each compiler is smaller than 10
+KByte:
+
+|         | host |
+| target  | wasm | x86  | armv6m | rv32 | or1k |
+| ------- | ---- | ---- | ------ | ---- | ---- |
+| wasm    | 6049 | 7259 | 7214   | 7476 | 9244 |
+| x86     | 6145 | 7442 | 7518   | 7624 | 9560 |
+| armv6m  | 6219 | 7454 | 7586   | 7908 | 9736 |
+| rv32    | 6448 | 8041 | 8094   | 8152 | 9912 |
+| or1k    | 6379 | 7791 | 7994   | 8028 | 9784 |
+
+
+
+Language Restrictions
 ---------------------
 
   * No linker.
@@ -49,6 +60,58 @@ Language restrictions
 |   3   | < <= > >= == !=      | comparison              |
 |   4   | =                    | assignment              |
 
+Inspired by
+  * [cc500](https://github.com/8l/cc500) -
+    a tiny self-hosting C compiler by Edmund Grimley Evans
+  * [Obfuscated Tiny C Compiler](https://bellard.org/otcc/) -
+    very small self compiling C compiler by Fabrice Bellard
+  * [Tiny C Compiler](https://savannah.nongnu.org/projects/tinycc) -
+    a small but hyper fast C compiler.
+  * [Compiler Construction](https://people.inf.ethz.ch/wirth/CompilerConstruction/index.html) -
+    brief but comprehensive book by Niklaus Wirth.
+
+
+
+Usage
+-----
+
+To build punycc for all target architectures use
+
+    ./make.sh compile_native
+
+The executables are named `build/punycc_ARCH.native`.
+They read C source code from stdin and write an executable to stdout:
+
+    ./punycc_x86.native < foo.c > foo.x86
+
+To execute `foo` it must be made executable:
+
+    chmod +x foo.x86
+    ./foo.x86
+
+A cross compiled executable can be emulated with qemu:
+
+    ./punycc_rv32.clang < foo.c > foo.rv32
+    chmod +x foo.rv32
+    qemu-riscv32 foo.rv32
+
+There is no standard library or standard include files. Everything must be in
+the single source code file. The `host_ARCH.c` files have some rudimentary
+implementations of standard functions that are needed for the compiler.
+Use them by concatenating files:
+
+    cat host_rv32.c hello.c | ./punycc_rv32.x86 > hello.rv32
+
+Compile all architectures against all others and check if they produce the same
+on different architectures with:
+
+    ./make.sh test_full
+
+Show the compiler sizes of all combinations:
+
+    ./make.sh stats
+
+
 
 
 Low-Level Functions
@@ -66,40 +129,6 @@ system (e.g. file I/O). But code can be written in pure binary:
 
 Other compilers ignore the `_Pragma` statement, which turns the line into a
 forward declaration where libc can be linked against.
-
-
-
-Usage
------
-
-To build punycc for all target architectures use
-
-    ./make.sh clang
-
-The executables are named `build/punycc_ARCH.clang`.
-They read C source code from stdin and write an executable to stdout:
-
-    ./punycc_x86.clang < foo.c > foo.x86
-
-To execute `foo` it must be made executable:
-
-    chmod 775 foo.x86
-    ./foo.x86
-
-A cross compiled executable can be emulated with qemu:
-
-    ./punycc_rv32.clang < foo.c > foo.rv32
-    chmod 775 foo.rv32
-    qemu-riscv32 foo.rv32
-
-There is no standard library or standard include files. Everything must be in
-the single source code file. The `host_ARCH.c` files have some rudimentary
-implementations of standard functions that are needed for the compiler.
-Use them by concatenating files:
-
-    cat host_rv32.c hello.c | ./punycc_rv32.clang > hello.rv32
-
-
 
 
 
@@ -152,4 +181,5 @@ concatination of symbol entries with the following format:
 
 The functions prefixed by `emit_` are used to generate the machine code. The
 template in [emit_template.c](emit_template.c) documents all functions and can be used as
-starting point for a new architecture backend.
+starting point for a new architecture backend. The steps to create the OpenRISC backend
+are documented in [codegen/or1k/steps.md](codegen/or1k/steps.md) and may be helpful, too.

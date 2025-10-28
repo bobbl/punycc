@@ -8,6 +8,7 @@ help () {
     echo "  rv32             Set ISA to RISC-V RV32IM"
     echo "  armv6m           Set ISA to ARMv6-M (minimal thumb ISA of Cortex-M0)"
     echo "  wasm             Set ISA to WebAssembly"
+    echo "  or1k             Set ISA to OpenRISC 1000"
     echo
     echo "  compile_native   Compile for ISA with the native compiler of the platform"
     echo "  compile_all      Compile native for all ISAs, then all cross combinations"
@@ -18,6 +19,7 @@ help () {
     echo "  test_cc500       Compile cc500 with cross compiler and check against original"
     echo "  test_multi       Build 3 compilers for every ISA: self, tox86 and cc500"
     echo "  test_full        Build every cross compiler on every platform and compare"
+    echo "  test_full_par    Same with multiple processes"
     echo
     echo "  disasm <elf>     Disassemble raw ELF with current ISA"
     echo "  asm_riscv <code> Assemble to rv32 machine code"
