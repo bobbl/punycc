@@ -26,8 +26,6 @@ unsigned int code_pos;      /* position in the buffer for code generation */
  * Recommended names for global variables
  **********************************************************************/
 
-unsigned int stack_pos;     /* current stack pointer */
-unsigned int num_params;    /* number of function parameters */
 unsigned int num_locals;    /* number of local variables in the current function */
 unsigned int num_globals;   /* number of global variables */
 

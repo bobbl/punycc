@@ -25,27 +25,34 @@
  **********************************************************************/
 
 
-/* constants */
-unsigned int buf_size;
 
-/* global variables */
-unsigned char *buf;
-unsigned int code_pos;
+unsigned int buf_size;          /* total size of the buffer */
+unsigned char *buf;             /* pointer to the buffer */
+unsigned int code_pos;          /* position in the buffer for code generation */
+unsigned int num_locals;        /* number of local variables in the current function */
+unsigned int num_globals;       /* number of global variables */
+
 unsigned int reg_pos;
-unsigned int num_globals;
 unsigned int last_insn;
-unsigned int num_locals;
+unsigned int last_insn_type;
+    /*  8 push imm12
+       10 push uimm32
+       11 push reg (used as local variable)
+       13 push mem (used as global or loval variable)
+       14 arith operation
+       15 comparison
+       8...15 write into the destination register
+    */
+unsigned int return_list;
 unsigned int max_locals;
 unsigned int function_start_pos;
-unsigned int num_scope;
-unsigned int num_calls;
-unsigned int max_reg_pos;
-unsigned int return_list;
-
 unsigned int last_branch_target;
     /* Position where the last branch points to.
        Used to determine the length of the last uninterrupted sequences of
        instructions. */
+unsigned int num_scope;
+unsigned int num_calls;
+unsigned int max_reg_pos;
 
 char *local_reg;
 
@@ -89,6 +96,7 @@ void emit32(unsigned int n)
     unsigned int cp = code_pos;
     code_pos = cp + 4;
     last_insn = n;
+    last_insn_type = 0;
     set_32bit(buf + cp, n);
 }
 
@@ -117,13 +125,6 @@ unsigned int extract_jal_disp(unsigned int insn)
  /*           ^^^^^ FIXME: signed integer */
 }
 
-void emit_stype(unsigned int opcode, unsigned int imm)
-{
-    emit32(opcode +
-        ((imm & 1016   ) << 22) +       /* bits 31..25 = imm[11..5] */
-        ((imm & 7      ) <<  9));       /* bits 11..7  = imm[4..0] */
-}
-
 void emit_push()
 {
     reg_pos = reg_pos + 1;
@@ -135,6 +136,7 @@ void emit_number(unsigned int imm)
     if (((imm + 2048) >> 12) == 0) {
         emit_isdo(imm, 0, reg_pos, 19);
                 /* 00000013  ADDI REG[reg_pos], X0, imm */
+        last_insn_type = 8;
     }
     else {
         emit32((((imm + 2048) >> 12) << 12) + (reg_pos << 7) + 55);
@@ -143,6 +145,7 @@ void emit_number(unsigned int imm)
             emit_isdo(imm, reg_pos, reg_pos, 19);
                 /* 00000013  ADDI REG[reg_pos], REG[reg_pos], imm */
         }
+        last_insn_type = 10;
     }
 }
 
@@ -155,51 +158,49 @@ void emit_string(unsigned int len, char *s)
     emit_binary_func(aligned_len, s);
 }
 
-
-void store_local(unsigned int ofs)
-{
-    if (ofs < 13) {
-        emit_isdo(0, reg_pos, local_reg[ofs], 19);
-            /* ADDI REG[local_reg[ofs]], REG[reg_pos], 0 */
-    }
-    else {
-        emit_stype(10559523 + ((reg_pos-10) << 20), ofs);
-            /* SW REG[reg_pos], (ofs+1)(SP) */
-    }
-}
-
 void emit_store(unsigned int global, unsigned int ofs)
 {
-    /* reg_pos is always 10 at this point */
-    if (global == 0) {
-        store_local(ofs);
-    }
-    else {
-        emit_stype(10559523 + (global << 15), ofs);
-            /* SW A0, (ofs+1)(REG[2+global]) */
-    }
-}
+    /* When called from punycc.c, reg_pos is always 10.
+       But it is called from emit_pre_call() (via emit_local_var())
+       to save the parameter stack. In the latter case, reg_pos
+       can be higher. */
 
-void load_local(unsigned int ofs)
-{
-    if (ofs < 13) {
-        emit_isdo(0, local_reg[ofs], reg_pos, 19);
-            /* ADDI REG[reg_pos], REG[local_reg[ofs]], 0 */
+    if (global == 0) {
+        if (ofs < 13) {
+            if (last_insn_type > 7) {
+                code_pos = code_pos - 4;
+                emit32((last_insn & 4294963327) | (local_reg[ofs] << 7));
+                    /*              0xFFFFF07F */
+            }
+            else {
+                emit_isdo(0, reg_pos, local_reg[ofs], 19);
+                    /* ADDI REG[local_reg[ofs]], REG[reg_pos], 0 */
+            }
+            return;
+        }
     }
-    else {
-        emit_isdo(ofs << 2, 0, reg_pos, 73731);
-            /* LW reg_pos, ofs(SP) */
-    }
+    emit32(73763 +
+        (global << 15) +
+        (reg_pos << 20) +
+        ((ofs & 1016   ) << 22) +       /* bits 31..25 = ofs[9..3] */
+        ((ofs & 7      ) <<  9));       /* bits 11..7  = ofs[2..0] 0 0  */
+        /* SW REG[reg_pos], (ofs+1)(REG[2+global]) */
 }
 
 void emit_load(unsigned int global, unsigned int ofs)
 {
     if (global == 0) {
-        load_local(ofs);
+        if (ofs < 13) {
+            emit_isdo(0, local_reg[ofs], reg_pos, 19);
+                /* ADDI REG[reg_pos], REG[local_reg[ofs]], 0 */
+            last_insn_type = 11; /* push reg */
+            return;
+        }
     }
     else {
         emit_isdo(ofs << 2, global, reg_pos, 73731);
             /* LW reg_pos, ofs(REG[2+global]) */
+        last_insn_type = 13; /* push mem */
     }
 }
 
@@ -209,6 +210,8 @@ void emit_index_push(unsigned int global, unsigned int ofs)
     emit_load(global, ofs);
     emit_isdo(reg_pos, reg_pos-1, reg_pos-1, 51);
         /* ADD REG[reg_pos-1], REG[reg_pos-1], REG[reg_pos] */
+    last_insn_type = 14; /* arith operation */
+
 }
 
 void emit_pop_store_array()
@@ -228,9 +231,31 @@ void emit_index_load_array(unsigned int which, unsigned int ofs)
         /* LBU REG[reg_pos], 0(REG[reg_pos]) */
 }
 
-void emit_operation(unsigned int t)
+
+/* Same as emit_isdo(), but rs=reg_pos and if REG[reg_pos] is loaded from
+   a local varaible in the previous instruction, fuse them. */
+void emit_irdo(unsigned int imm, unsigned int rd, unsigned int opcode)
 {
-    reg_pos = reg_pos - 1;
+    unsigned int reg_s = reg_pos;
+    unsigned int prev_insn = get_32bit(buf + code_pos - 4);
+    if ((prev_insn & 4293947519) == 19) {
+        /*           0xfff0707f) == 0x13) { */
+        if (((prev_insn >> 7) & 31) == reg_pos) { /* really necessary? */
+            /* load local*/
+            reg_s = (prev_insn >> 15) & 31;
+            code_pos = code_pos - 4;
+        }
+    }
+    emit_isdo(imm, reg_s, rd, opcode);
+    last_insn_type = 14; /* arith operation */
+}
+
+
+void emit_operation(unsigned int operation)
+{
+    unsigned int reg_t = reg_pos;
+    unsigned int reg_s = reg_t - 1;
+    reg_pos = reg_s;
 
 /*
     if (t == 1)       o = 4147;         / * << sll  00101033 * /
@@ -245,27 +270,35 @@ void emit_operation(unsigned int t)
     else if (t == 10) o = 33583155 + 1048576;     / * % remu  02107033 * /
 */
 
-    /* code optimization for constant immediates */
+    unsigned int imm = reg_pos;
+        /*    reg_pos+1      But +1 is added to opcode */
+    char *code_arith = "    \x33\x10\x10\x00\x33\x50\x10\x00\x33\x00\x10\x40\x33\x60\x10\x00\x33\x40\x10\x00\x33\x00\x10\x00\x33\x70\x10\x00\x33\x00\x10\x02\x33\x50\x10\x02\x33\x70\x10\x02"; 
+    unsigned int op = get_32bit((unsigned char *)code_arith + (operation<<2));
 
-    if (t < 8) {
+    /* code optimization if second operand is a load from register */
+    if (last_insn_type == 11) { /* push reg */
+        imm = ((last_insn >> 15) & 31) - 1;
+        code_pos = code_pos - 4;
+    }
+    
+
+    /* code optimization for constant immediates */
+    if (operation < 8) {
         if ((last_insn & 1044607) == 19) {
             /* 0xFF07F  addi ?, x0, ?
                register need not be checked
                if (((last_insn & 1048575) == (19 + ((reg_pos + 11) << 7))) { */
-            char *code_func = " \x01\x05\x00\x06\x05\x00\x07";
-            unsigned int imm = last_insn >> 20;
-            if (t == 3) imm = 0 - imm;
+            imm = last_insn >> 20;
+            if (operation == 3) imm = 0 - imm;
                 /* 00000013  addi REG, REG, -IMM 
                    imm is always positive, therefore -(-2048)=2048
                    cannot happen */
             code_pos = code_pos - 4;
-            emit_isdo(imm, reg_pos, reg_pos, (code_func[t] << 12) + 19);
-            return;
+            op = (((1884685584 >> (operation << 2)) & 15) << 12) + 19;
+                /* 0x70560510 */
         }
     }
-
-    char *code_arith = "    \x33\x10\x10\x00\x33\x50\x10\x00\x33\x00\x10\x40\x33\x60\x10\x00\x33\x40\x10\x00\x33\x00\x10\x00\x33\x70\x10\x00\x33\x00\x10\x02\x33\x50\x10\x02\x33\x70\x10\x02"; 
-    emit_isdo(reg_pos, reg_pos, reg_pos, get_32bit((unsigned char *)code_arith + (t<<2)));
+    emit_irdo(imm, reg_pos, op);
 }
 
 void emit_comp(unsigned int condition)
@@ -301,6 +334,7 @@ void emit_comp(unsigned int condition)
                 /* xori REG, REG, 1         >= or <= */
         }
     }
+    last_insn_type = 13; /* arith comparison */
 }
 
 unsigned int emit_pre_while()
@@ -423,7 +457,7 @@ unsigned int emit_call(unsigned int ofs, unsigned int pop, unsigned int save)
 
         reg_pos = 10;
         while (reg_pos < save) {
-            load_local(num_locals);
+            emit_load(0, num_locals);
             reg_pos = reg_pos + 1;
             num_locals = num_locals - 1;
         }

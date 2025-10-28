@@ -23,8 +23,6 @@
 unsigned int buf_size;          /* total size of the buffer */
 unsigned char *buf;             /* pointer to the buffer */
 unsigned int code_pos;          /* position in the buffer for code generation */
-unsigned int stack_pos;         /* current stack pointer */
-unsigned int num_params;        /* number of function parameters */
 unsigned int num_locals;        /* number of local variables in the current function */
 unsigned int num_globals;       /* number of global variables */
 
@@ -35,9 +33,10 @@ unsigned int last_insn_type;
         8 push uimm15
         9 push uimm16
        10 push uimm32
-       12 push local
-       13 push global
-       14 operation
+       11 push register used as local variable
+       12 push local variable (unused)
+       13 push global variable
+       14 arith operation
        15 comparison
        8...15 write into the destination register
     */
@@ -270,7 +269,7 @@ void emit_odri(unsigned int o, unsigned int d, unsigned int i)
 unsigned int fuse_load_local(unsigned int reg)
 {
     unsigned int b = reg << 11;
-    if (last_insn_type == 12 /* push local */) {
+    if (last_insn_type == 11 /* push register */) {
         if (code_pos > last_branch_target) {
             code_pos = code_pos - 4;
             b = (last_insn >> 5) & 63488; /* 0xf800 */
@@ -469,7 +468,7 @@ void emit_load(unsigned int global, unsigned int ofs)
     else {
         emit_odai(56, reg_pos, ofs + 12, 4);
             /* l.ori REG[reg_pos], REG[ofs+12], r0 */
-        last_insn_type = 12; /* push local */
+        last_insn_type = 11; /* push register */
     }
 }
 
@@ -547,7 +546,7 @@ void emit_operation(unsigned int operation)
         emit32(3758098434 + rrr);
             /* E? ?? ?0 02  l.sub  r,   r,   r+1    0xe000'0802+rrr */
     }
-    last_insn_type = 14; /* pop operation */
+    last_insn_type = 14; /* arith operation */
 }
 
 
@@ -578,7 +577,7 @@ void set_flag(unsigned int condition)
     else {
         emit_odrri(57, cond, 0);
     }
-    last_insn_type = 15; /* pop comparision */
+    last_insn_type = 15; /* comparision */
 }
 
 /* Pop one value from the stack and compare it with the accumulator.
@@ -880,7 +879,7 @@ void emit_index_push(unsigned int global, unsigned int ofs)
         imm = last_insn & 32767;
         code_pos = code_pos - 4;
     }
-    else if (last_insn_type == 12) { /* push local */
+    else if (last_insn_type == 11) { /* push register */
         imm = ((last_insn >> 16) & 31) << 11;
         code_pos = code_pos - 4;
     }
@@ -892,7 +891,7 @@ void emit_index_push(unsigned int global, unsigned int ofs)
     }
     emit_odai(op, reg_pos, b, imm);
 
-    last_insn_type = 14; /* pop operation */
+    last_insn_type = 14; /* arith operation */
     emit_push();
 }
 
