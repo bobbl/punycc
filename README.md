@@ -24,14 +24,13 @@ host and target combination. Host is the architecture where the compiler runs
 and target is the ISA of the compiled binary. Each compiler is smaller than 10
 KByte:
 
-|         | host |
-| target  | wasm | x86  | armv6m | rv32 | or1k |
-| ------- | ---- | ---- | ------ | ---- | ---- |
-| wasm    | 6049 | 7259 | 7214   | 7476 | 9244 |
-| x86     | 6145 | 7442 | 7518   | 7624 | 9560 |
-| armv6m  | 6219 | 7454 | 7586   | 7908 | 9736 |
-| rv32    | 6448 | 8041 | 8094   | 8152 | 9912 |
-| or1k    | 6379 | 7791 | 7994   | 8028 | 9784 |
+| target \ host  | wasm | x86  | armv6m | rv32 | or1k |
+| -------------- | ---- | ---- | ------ | ---- | ---- |
+| wasm           | 6049 | 7259 | 7214   | 7476 | 9244 |
+| x86            | 6145 | 7442 | 7518   | 7624 | 9560 |
+| armv6m         | 6219 | 7454 | 7586   | 7908 | 9736 |
+| rv32           | 6448 | 8041 | 8094   | 8152 | 9912 |
+| or1k           | 6379 | 7791 | 7994   | 8028 | 9784 |
 
 
 
