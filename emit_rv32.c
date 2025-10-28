@@ -116,15 +116,6 @@ unsigned int insn_jal(unsigned int rd, unsigned int immj)
         111;                            /* bits  6..0  = 0x6f (jal) */
 }
 
-unsigned int extract_jal_disp(unsigned int insn)
-{
-    return (((insn >> 20) & 2046) |             /* bits 10..1  = insn[30..21] */
-            (((insn >> 20) & 1) << 11) |        /* bit  11     = insn[20]     */
-            (insn & 1044480) |                  /* bits 19..12 = insn[19..12]   0xFF000 */
-            ((0 - ((insn >> 31) & 1)) & 4293918720)); /* bits 31..20 = insn[31]       0xFFF00000 */
- /*           ^^^^^ FIXME: signed integer */
-}
-
 void emit_push()
 {
     reg_pos = reg_pos + 1;
@@ -204,97 +195,68 @@ void emit_load(unsigned int global, unsigned int ofs)
     }
 }
 
-void emit_index_push(unsigned int global, unsigned int ofs)
-{
-    emit_push();
-    emit_load(global, ofs);
-    emit_isdo(reg_pos, reg_pos-1, reg_pos-1, 51);
-        /* ADD REG[reg_pos-1], REG[reg_pos-1], REG[reg_pos] */
-    last_insn_type = 14; /* arith operation */
-
-}
-
-void emit_pop_store_array()
-{
-    /* reg_pos is always 11 at this point */
-    reg_pos = 10;
-    emit32(11862051);
-        /* 00B50023  SB A1,0(A0) */
-}
-
-void emit_index_load_array(unsigned int which, unsigned int ofs)
-{
-    emit_index_push(which, ofs);
-    reg_pos = reg_pos - 1;
-
-    emit_isdo(0, reg_pos, reg_pos, 16387);
-        /* LBU REG[reg_pos], 0(REG[reg_pos]) */
-}
-
-
 /* Same as emit_isdo(), but rs=reg_pos and if REG[reg_pos] is loaded from
-   a local varaible in the previous instruction, fuse them. */
+   a local variable in the previous instruction, fuse them. */
 void emit_irdo(unsigned int imm, unsigned int rd, unsigned int opcode)
 {
-    unsigned int reg_s = reg_pos;
+    unsigned int rs = reg_pos;
     unsigned int prev_insn = get_32bit(buf + code_pos - 4);
     if ((prev_insn & 4293947519) == 19) {
-        /*           0xfff0707f) == 0x13) { */
+        /*           0xfff0707f) == 0x13)    ADDI REG[reg_pos], REG[local], 0 */
         if (((prev_insn >> 7) & 31) == reg_pos) { /* really necessary? */
             /* load local*/
-            reg_s = (prev_insn >> 15) & 31;
+            rs = (prev_insn >> 15) & 31;
             code_pos = code_pos - 4;
         }
     }
-    emit_isdo(imm, reg_s, rd, opcode);
+    emit_isdo(imm, rs, rd, opcode);
     last_insn_type = 14; /* arith operation */
 }
 
-
 void emit_operation(unsigned int operation)
 {
-    unsigned int reg_t = reg_pos;
-    unsigned int reg_s = reg_t - 1;
-    reg_pos = reg_s;
-
 /*
-    if (t == 1)       o = 4147;         / * << sll  00101033 * /
-    else if (t == 2)  o = 20531;        / * >> srl  00105033 * /
-    else if (t == 3)  o = 1073741875;   / * -  sub  40100033 * /
-    else if (t == 4)  o = 24627;        / * |  or   00106033 * /
-    else if (t == 5)  o = 16435;        / * ^  xor  00104033 * /
-    else if (t == 6)  o = 51;           / * +  add  00100033 * /
-    else if (t == 7)  o = 28723;        / * &  and  00107033 * /
-    else if (t == 8)  o = 33554483 + 1048576;     / * *  mul  02100033 * /
-    else if (t == 9)  o = 33574963 + 1048576;     / * / divu  02105033 * /
-    else if (t == 10) o = 33583155 + 1048576;     / * % remu  02107033 * /
+    1  << sll  00001033
+    2  >> srl  00005033
+    3  -  sub  40000033
+    4  |  or   00006033
+    5  ^  xor  00004033
+    6  +  add  00000033
+    7  &  and  00007033
+    8  *  mul  02000033
+    9  / divu  02005033
+    10 % remu  02007033
 */
 
-    unsigned int imm = reg_pos + 1;
-    char *code_arith = "    \x33\x10\x10\x00\x33\x50\x10\x00\x33\x00\x10\x40\x33\x60\x10\x00\x33\x40\x10\x00\x33\x00\x10\x00\x33\x70\x10\x00\x33\x00\x10\x02\x33\x50\x10\x02\x33\x70\x10\x02"; 
-    unsigned int op = get_32bit((unsigned char *)code_arith + (operation<<2))
-        - 1048576; /* correction from a previous optimisation (rd+1) */
+    unsigned int imm = reg_pos;
+    reg_pos = imm - 1;
 
-    /* code optimization if second operand is a load from register */
+    unsigned int shift = operation + operation + operation - 3;
+    unsigned int op = (((1025264681 >> shift) & 7) << 12) + 51;
+        /* octal: 75'0704'6051 */
+    if (operation > 7) op = op + 33554432; /* 0x0200'0000 */
+    if (operation == 3) op = 1073741875;  /* 0x4000'0033 */
+
+    /* code optimisation if second operand is a load from register */
     if (last_insn_type == 11) { /* push reg */
-        imm = ((last_insn >> 15) & 31);
+        imm = (last_insn >> 15) & 31;
         code_pos = code_pos - 4;
     }
 
-    /* code optimization for constant immediates */
+    /* code optimisation for constant immediates */
     if (operation < 8) {
         if ((last_insn & 1044607) == 19) {
-            /* 0xFF07F  addi ?, x0, ?
+            /* 0xFF07F  ADDI ?, X0, ?
                register need not be checked
                if (((last_insn & 1048575) == (19 + ((reg_pos + 11) << 7))) { */
             imm = last_insn >> 20;
             if (operation == 3) imm = 0 - imm;
-                /* 00000013  addi REG, REG, -IMM 
+                /* 00000013  ADDI reg, reg, -imm
                    imm is always positive, therefore -(-2048)=2048
                    cannot happen */
             code_pos = code_pos - 4;
-            op = (((1884685584 >> (operation << 2)) & 15) << 12) + 19;
-                /* 0x70560510 */
+            op = (((1854505 >> shift) & 7) << 12) + 19;
+                /* octal: 704'6051 */
         }
     }
     emit_irdo(imm, reg_pos, op);
@@ -336,6 +298,44 @@ void emit_comp(unsigned int condition)
     last_insn_type = 13; /* arith comparison */
 }
 
+void emit_index_push(unsigned int global, unsigned int ofs)
+{
+    emit_push();
+    emit_load(global, ofs);
+    emit_operation(6); /* add */
+    emit_push();
+    last_insn_type = 14; /* arith operation */
+}
+
+void emit_pop_store_array()
+{
+    /* reg_pos is always 11 at this point */
+    reg_pos = 10;
+    emit32(11862051);
+        /* 00B50023  SB A1,0(A0) */
+}
+
+void emit_index_load_array(unsigned int global, unsigned int ofs)
+{
+    unsigned int imm = 0;
+    unsigned int rs = reg_pos;
+    if (last_insn_type == 8) { /* push imm12 */
+        imm = last_insn >> 20;
+        code_pos = code_pos - 4;
+        rs = local_reg[ofs];
+        if ((global != 0) | (ofs >= 13)) {
+            emit_load(global, ofs);
+            rs = reg_pos;
+        }
+    }
+    else {
+        emit_index_push(global, ofs);
+        reg_pos = reg_pos - 1;
+    }
+    emit_isdo(imm, rs, reg_pos, 16387);
+        /* LBU REG[reg_pos], 0(REG[reg_pos]) */
+}
+
 unsigned int emit_pre_while()
 {
     return code_pos;
@@ -343,33 +343,55 @@ unsigned int emit_pre_while()
 
 unsigned int emit_if(unsigned int condition)
 {
-    /* in this case reg_pos must be 11 */
-    reg_pos = 10;
+    /* at function entry reg_pos is always 11 */
+    unsigned int rs = 10;
+    unsigned int rt = 11;
 
-    unsigned int o = 10874979;
-    if (condition < 2) {
-        o = 11866211;
-        if (last_insn == 1427) { /* 00000593  addi a1, x0, 0 */
-            /* optimization if compared with 0 */
-            code_pos = code_pos - 4;
-            o = 10489955;  /* 00A01063 bne zero, a0, +0 */
-                /* Don't use the recommended `bne a0, zero, +0` which is
-                   abbreviated as `bnez a0, +0`.
-                   Reason: in refactor() a0 will be replaced by a register
-                   and this way a0 remains at the same position in the
-                   opcode and no special case is needed. */
-        }
+    /* code optimisation if first operand is a local register */
+    unsigned int prev_insn = get_32bit(buf + code_pos - 8);
+    if ((prev_insn & 4293951487) == 1299) {
+        /*           0xfff07fff) == 0x513     ADDI A0, x?, 0 */
+        rs = (prev_insn >> 15) & 31;
+        code_pos = code_pos - 8;
+        emit32(last_insn);
     }
-    else if (condition < 4) {
-        o = 11890787;
+
+    /* code optimisation if second operand is a local register */
+    if (last_insn_type == 11) { /* push reg */
+        rt = (last_insn >> 15) & 31;
+        code_pos = code_pos - 4;
     }
-    emit32(o - ((condition & 1) << 12));
-            /* 0  00B51063     bne a0, a1, +0    ==
-               1  00B50063     beq a0, a1, +0    !=
-               2  00B57063     bgeu a0, a1, +0   <
-               3  00B56063     bltu a0, a1, +0   >=
-               4  00A5F063     bgeu a1, a0, +0   >
-               5  00A5E063     bltu a1, a0, +0   <= */
+
+    /* code optimisation if second operand is 0 */
+    if (last_insn == 1427) { /* 00000593  ADDI A1, X0, 0 */
+        rt = 0;
+        code_pos = code_pos - 4;
+    }
+
+    /* 0  00001063     BNE  s, t, +0    ==
+       1  00000063     BEQ  s, t, +0    !=
+       2  00007063     BGEU s, t, +0   <
+       3  00006063     BLTU s, t, +0   >=
+       4  00007063     BGEU t, s, +0   >
+       5  00006063     BLTU t, s, +0   <= */
+    if (condition > 3) {
+        unsigned h = rs;
+        rs = rt;
+        rt = h;
+        condition = condition - 2;
+    }
+    emit_isdo(rt, rs, 0,
+        ((condition & 2) << 13) |
+        (((condition & 3) ^ 1) << 12) | 99);
+/*
+    emit32(
+        (rt << 20) |
+        (rs << 15) |
+        ((condition & 2) << 13) |
+        (((condition & 3) ^ 1) << 12) |
+        99);
+*/
+    reg_pos = 10;
     return code_pos - 4;
 }
 
@@ -425,10 +447,10 @@ unsigned int emit_global_var()
 
 unsigned int emit_pre_call()
 {
-    /* save parameter stack it it is not empty */
+    /* save expression stack it it is not empty */
     unsigned int r = reg_pos;
     if (r > 10) {
-        /* save currently used parameter registers */
+        /* save currently used expression stack registers */
         while (reg_pos > 10) {
             reg_pos = reg_pos - 1;
             emit_local_var(1);
@@ -450,7 +472,7 @@ unsigned int emit_call(unsigned int ofs, unsigned int pop, unsigned int save)
     num_calls = num_calls + 1;
 
     if (save > 10) {
-        /* restore previously saved parameter registers */
+        /* restore previously saved expression stack registers */
         emit32((save << 7) + 327699);
             /* 000500513  MV REG[reg_pos], A0 */
 
@@ -523,17 +545,23 @@ void emit_func_end()
     set_32bit(buf + function_start_pos + 4, entry);
 
     /* go throught list of return statements */
+    unsigned int cp = code_pos;
     unsigned int next = return_list;
+    if (next == (cp - 4)) {
+        /* remove last jump to following instruction */
+        cp = cp - 4;
+        code_pos = cp;
+    }
     while (next != 0) {
         unsigned int pos = next;
         next = get_32bit(buf + pos);
-        set_32bit(buf + pos, insn_jal(0, code_pos - pos));
+        set_32bit(buf + pos, insn_jal(0, cp - pos));
     }
 
     /* emit jump to epilogue */
     emit32(stack_size + 659);
         /* 00000593  ADDI X5, X0, stack_size */
-    emit32(insn_jal(0, 240 - (m << 2) - code_pos));
+    emit32(insn_jal(0, 236 - (m << 2) - cp));
         /* J _epilogue + 4*(12-num_locals) */
 }
 
