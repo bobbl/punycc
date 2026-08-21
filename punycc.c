@@ -466,8 +466,7 @@ static void parse_factor(void)
         ofs = get_32bit(buf + sym);
         get_token();
 
-        if ((type | 1) == 73) { /* type 72 or 73: function */
-            expect('(');
+        if (accept('(') != 0) { /* function */
             unsigned int argno = 0;
             unsigned int save = emit_pre_call();
             if (accept(')') == 0) {

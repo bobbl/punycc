@@ -22,6 +22,17 @@
  * x18...x27 s2 ...s11  callee-saved local variables (including copy of parameters)
  * x28...x31 t3 ... t6  expression stack
  *
+ * Memory map
+ * ----------
+ * 0x00010000 ELF header
+ * 0x00010054 program entry point: call to main()
+ * 0x00010068 function prologue/epilogue
+ * 0x000100FC standard library functions
+ *            compiled code
+ * GP-0x0800  global variables
+ * <GP+0x07FC end of ELF segment
+ * ...
+ * 0x7FFFFFC  end of stack
  **********************************************************************/
 
 
