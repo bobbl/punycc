@@ -45,7 +45,9 @@ void *malloc(unsigned long) _Pragma("PunyC emit \x53\x31\xdb\xb8\x2d\x00\x00\x00
      1: pop ebx
         ret 4 */
 
+/*
 int putchar(int) _Pragma("PunyC emit \x53\xb8\x04\x00\x00\x00\x31\xdb\x43\x8d\x4c\x24\x08\x89\xda\xcd\x80\x5b\xc2\x04\x00");
+*/
     /*  push ebx
         mov eax, 4
         xor ebx, ebx

@@ -48,7 +48,9 @@ int write(int, char*, int) _Pragma("PunyC emit \x02\x98\x01\x99\x00\x9a\x04\x27\
         svc #0
         bx lr */
 
+/*
 int read(int, char*, int) _Pragma("PunyC emit \x02\x98\x01\x99\x00\x9a\x03\x27\x00\xdf\x70\x47");
+*/
     /*  ldr r0, [sp, #8]
         ldr r1, [sp, #4]
         ldr r2, [sp, #0]
@@ -56,10 +58,3 @@ int read(int, char*, int) _Pragma("PunyC emit \x02\x98\x01\x99\x00\x9a\x03\x27\x
         svc #0
         bx lr */
 
-int putchar(int) _Pragma("PunyC emit \x01\x20\x69\x46\x01\x22\x04\x27\x00\xdf\x70\x47");
-    /*  movs r0, #1
-        mov  r1, sp
-        movs r2, #1
-        movs r7, #4     @ sys_write
-        svc #0
-        bx lr */

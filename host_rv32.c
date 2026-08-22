@@ -46,15 +46,9 @@ int write(int, char*, int) _Pragma("PunyC emit \x93\x08\x00\x04\x73\x00\x00\x00\
         ecall
         ret */
 
+/*
 int read(int, char*, int) _Pragma("PunyC emit \x93\x08\xf0\x03\x73\x00\x00\x00\x67\x80\x00\x00");
+*/
     /*  li a7, 63       # sys_read
-        ecall
-        ret */
-
-int putchar(int) _Pragma("PunyC emit \x13\x05\x10\x00\x93\x05\x01\x00\x13\x06\x10\x00\x93\x08\x00\x04\x73\x00\x00\x00\x67\x80\x00\x00");
-    /*  li a0, 1
-        mv a1, sp
-        li a2, 1
-        li a7, 64       # sys_write
         ecall
         ret */
