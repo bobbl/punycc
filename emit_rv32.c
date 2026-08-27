@@ -168,36 +168,38 @@ void emit_store(unsigned int global, unsigned int ofs)
        can be higher. */
 
     if (global == 0) {
-        if (ofs < 13) {
-            if (last_insn_type > 7) {
-                code_pos = code_pos - 4;
-                emit32((last_insn & 4294963327) | (local_reg[ofs] << 7));
-                    /*              0xFFFFF07F */
-            }
-            else {
-                emit_isdo(0, reg_pos, local_reg[ofs], 19);
-                    /* ADDI REG[local_reg[ofs]], REG[reg_pos], 0 */
-            }
-            return;
+        /* More than 13 local variables are not supported.
+           Therefore ofs must be lower than 13
+           assert(ofs < 13) */
+        if (last_insn_type > 7) {
+            code_pos = code_pos - 4;
+            emit32((last_insn & 4294963327) | (local_reg[ofs] << 7));
+                /*              0xFFFFF07F */
+        }
+        else {
+            emit_isdo(0, reg_pos, local_reg[ofs], 19);
+                /* ADDI REG[local_reg[ofs]], REG[reg_pos], 0 */
         }
     }
-    emit32(73763 +
-        (global << 15) +
-        (reg_pos << 20) +
-        ((ofs & 1016   ) << 22) +       /* bits 31..25 = ofs[9..3] */
-        ((ofs & 7      ) <<  9));       /* bits 11..7  = ofs[2..0] 0 0  */
-        /* SW REG[reg_pos], (ofs+1)(REG[2+global]) */
+    else {
+        emit32(73763 +
+            (global << 15) +
+            (reg_pos << 20) +
+            ((ofs & 1016   ) << 22) +       /* bits 31..25 = ofs[9..3] */
+            ((ofs & 7      ) <<  9));       /* bits 11..7  = ofs[2..0] 0 0  */
+            /* SW REG[reg_pos], (ofs+1)(REG[2+global]) */
+    }
 }
 
 void emit_load(unsigned int global, unsigned int ofs)
 {
     if (global == 0) {
-        if (ofs < 13) {
-            emit_isdo(0, local_reg[ofs], reg_pos, 19);
-                /* ADDI REG[reg_pos], REG[local_reg[ofs]], 0 */
-            last_insn_type = 11; /* push reg */
-            return;
-        }
+        /* More than 13 local variables are not supported.
+           Therefore ofs must be lower than 13
+           assert(ofs < 13) */
+        emit_isdo(0, local_reg[ofs], reg_pos, 19);
+            /* ADDI REG[reg_pos], REG[local_reg[ofs]], 0 */
+        last_insn_type = 11; /* push reg */
     }
     else {
         emit_isdo(ofs << 2, global, reg_pos, 73731);

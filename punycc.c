@@ -559,8 +559,12 @@ static void parse_statement(void)
         }
         emit_return();
     }
-    else if (accept_type() != 0) { /* variable declaration */
-        sym_append(0 /* don't care */, 74); /* local variable */
+    else if (accept_type() != 0) { /* local variable declaration */
+        sym_append(0 /* don't care */, 74/* local variable */);
+            /* Add a local variable to the symbol table. Must be done before
+               further parsing, otherwise the name of the identifier in
+               token_buf is lost. But at this point the address is unknown and
+               will be filled later with set_32bit() */
         s = 0;
         if (accept('=') != 0) {
             parse_expression();
