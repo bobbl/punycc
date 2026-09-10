@@ -159,13 +159,15 @@ static void e_imm(unsigned int reg, unsigned int imm)
     check_immpool();
 }
 
-static void access_var(unsigned int global, unsigned int ofs, unsigned int store, unsigned int index)
+static void access_var(unsigned int sym_type, unsigned int ofs, unsigned int store, unsigned int index)
 {
-    if (global != 0) {
+    if (sym_type == 71) {
+        /* global variable */
         e_imm(1, ofs);
         emit(index); emit(store);
     }
-    else {
+    else { 
+        /* local variable */
         emit(stack_pos - ofs + num_params + 1);
         emit(40 + store + index);
     }
@@ -276,23 +278,23 @@ static void emit_string(unsigned int len, char *s)
     check_immpool();
 }
 
-static void emit_store(unsigned int global, unsigned int ofs)
+static void emit_store(unsigned int sym_type, unsigned int ofs)
 {
-    access_var(global, ofs, 96, 8);
+    access_var(sym_type, ofs, 96, 8);
     /* global   -- -- 08 60     LDR R1, imm32 ; STR R0, [R1]
        local    -- 90           STR R0, [SP, #ofs] */
 }
 
-static void emit_load(unsigned int global, unsigned int ofs)
+static void emit_load(unsigned int sym_type, unsigned int ofs)
 {
-    access_var(global, ofs, 104, 8);
+    access_var(sym_type, ofs, 104, 8);
     /* global   -- -- 08 68     LDR R1, imm32 ; LDR R0, [R1]
        local    -- 98           LDR R0, [SP, #ofs] */
 }
 
-static void emit_index_push(unsigned int global, unsigned int ofs)
+static void emit_index_push(unsigned int sym_type, unsigned int ofs)
 {
-    access_var(global, ofs, 104, 9);
+    access_var(sym_type, ofs, 104, 9);
     /* global   -- -- 09 68     LDR R1, imm32 ; LDR R1, [R1]
        local    -- 99           LDR R1, [SP, #ofs] */
     emit16(17416);
@@ -307,9 +309,9 @@ static void emit_pop_store_array(void)
     /* no swap  emit16(28680);             08 70   STRB R0, [R1] */
 }
 
-static void emit_index_load_array(unsigned int which, unsigned int ofs)
+static void emit_index_load_array(unsigned int sym_type, unsigned int ofs)
 {
-    access_var(which, ofs, 104, 9);
+    access_var(sym_type, ofs, 104, 9);
     /* global   -- -- 09 68     LDR R1, imm32 ; LDR R1, [R1]
        local    -- 99           LDR R1, [SP, #ofs] */
     emit16(23616);                      /* 40 5C   LDRB R0, [R0, R1] */

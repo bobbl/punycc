@@ -21,7 +21,7 @@ unsigned int num_regvars;
 
 unsigned int last_insn;
 unsigned int last_load_code_pos;
-unsigned int last_load_which;
+unsigned int last_load_type;
 unsigned int last_load_ofs;
 unsigned int last_imm;
 unsigned int need_return;
@@ -127,7 +127,7 @@ void emit_string(unsigned int len, char *s)
 }
 
 
-void access_var(unsigned int which,
+void access_var(unsigned int sym_type,
                 unsigned int ofs_p,
                 unsigned int modrm,
                 unsigned int opcode_global,
@@ -136,7 +136,7 @@ void access_var(unsigned int which,
     unsigned int ofs = ofs_p; /* smaller code */
 
     /* global variable */
-    if (which != 0) {
+    if (sym_type == 71) {
         emit(opcode_global);
         if (opcode_global == opcode_local)
              emit(modrm + 5); /* other than mov requires extra byte */
@@ -182,13 +182,13 @@ void access_var(unsigned int which,
 
 void access_last_load(unsigned int modrm, unsigned int opcode)
 {
-    access_var(last_load_which, last_load_ofs, modrm, opcode, opcode);
+    access_var(last_load_type, last_load_ofs, modrm, opcode, opcode);
 }
 
 
-void emit_store(unsigned int which, unsigned int ofs)
+void emit_store(unsigned int sym_type, unsigned int ofs)
 {
-    access_var(which, ofs, 0, 163, 137);
+    access_var(sym_type, ofs, 0, 163, 137);
     /* global           A3 -- -- -- --          mov [imm32], eax
        local register   89 --                   mov e??, eax            !special!
        local short      89 44 24 --             mov [esp+imm7], eax
@@ -196,13 +196,13 @@ void emit_store(unsigned int which, unsigned int ofs)
 }
 
 
-void emit_load(unsigned int which, unsigned int ofs)
+void emit_load(unsigned int sym_type, unsigned int ofs)
 {
     last_load_code_pos = code_pos;
-    last_load_which = which;
+    last_load_type = sym_type;
     last_load_ofs = ofs;
 
-    access_var(which, ofs, 0, 161, 139);
+    access_var(sym_type, ofs, 0, 161, 139);
     /* global           A1 -- -- -- --          mov eax, [imm32]
        local register   89 --                   mov eax, e??
        local short      8B 44 24 --             mov eax, [esp+imm7]
@@ -211,9 +211,9 @@ void emit_load(unsigned int which, unsigned int ofs)
 }
 
 
-void emit_index_push(unsigned int which, unsigned int ofs)
+void emit_index_push(unsigned int sym_type, unsigned int ofs)
 {
-    access_var(which, ofs, 0, 3, 3);
+    access_var(sym_type, ofs, 0, 3, 3);
     /* global           03 05 -- -- -- --       add eax, [imm32]
        local reg        01 --                   add eax, e??
        local short      03 44 24 --             add eax, [esp+imm7]
@@ -230,9 +230,9 @@ void emit_pop_store_array()
 }
 
 
-void emit_index_load_array(unsigned int which, unsigned int ofs)
+void emit_index_load_array(unsigned int sym_type, unsigned int ofs)
 {
-    access_var(which, ofs, 0, 3, 3);
+    access_var(sym_type, ofs, 0, 3, 3);
     /* global           03 05 -- -- -- --       add eax, [imm32]
        local reg        01 --                   add eax, e??
        local short      03 44 24 --             add eax, [esp+imm7]

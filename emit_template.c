@@ -87,32 +87,32 @@ void emit_string(unsigned int len, char *s);
  **********************************************************************/
 
 
-/* Store accumulator in a global(1) or local(0) variable with address `ofs`
-   Function arguments have global=0 and ofs=1,2,3,... For other variables,
+/* Store accumulator in a global(71) or local(74) variable with address `ofs`
+   Function arguments have sym_type=74 and ofs=1,2,3,... For other variables,
    ofs is the return value of emit_local_var() or emit_global_var() */
-void emit_store(unsigned int global, unsigned int ofs);
+void emit_store(unsigned int sym_type, unsigned int ofs);
 
 
-/* Load accumulator from a global(1) or local(0) variable with address `ofs`
-   Function arguments have global=0 and ofs=1,2,3,... For other variables,
+/* Load accumulator from a global(71) or local(74) variable with address `ofs`
+   Function arguments have sym_type=74 and ofs=1,2,3,... For other variables,
    ofs is the return value of emit_local_var() or emit_global_var() */
-void emit_load(unsigned int global, unsigned int ofs);
+void emit_load(unsigned int sym_type, unsigned int ofs);
 
 
-/* input:  global(1) or local(0) variable used as a pointer
+/* input:  global(71) or local(74) variable used as a pointer
            accumulator contains the index into the array the pointer points to
    output: push pointer to the array element */
-void emit_index_push(unsigned int global, unsigned int ofs);
+void emit_index_push(unsigned int sym_type, unsigned int ofs);
 
 
 /* pop address (from emit_index_push()) and store lowest byte of accumulator
    there */
 void emit_pop_store_array();
 
-/* Read global(1) or local(0) variable with address `ofs` as base pointer.
+/* Read global(71) or local(74) variable with address `ofs` as base pointer.
    Add index (in accumulator) to the base pointer.
    Load byte from the computed address and store in accumulator.  */
-void emit_index_load_array(unsigned int global, unsigned int ofs);
+void emit_index_load_array(unsigned int sym_type, unsigned int ofs);
 
 
 

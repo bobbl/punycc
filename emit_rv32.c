@@ -160,14 +160,15 @@ void emit_string(unsigned int len, char *s)
     emit_binary_func(aligned_len, s);
 }
 
-void emit_store(unsigned int global, unsigned int ofs)
+void emit_store(unsigned int sym_type, unsigned int ofs)
 {
     /* When called from punycc.c, reg_pos is always 10.
        But it is called from emit_pre_call() (via emit_local_var())
        to save the parameter stack. In the latter case, reg_pos
        can be higher. */
 
-    if (global == 0) {
+    if (sym_type == 74) {
+        /* local variable */
         if (ofs < 13) {
             if (last_insn_type > 7) {
                 code_pos = code_pos - 4;
@@ -183,16 +184,16 @@ void emit_store(unsigned int global, unsigned int ofs)
         /* more than 13 local vars: fall back to stack */
     }
     emit32(73763 +
-        (global << 15) +
+        ((sym_type & 1) << 15) +
         (reg_pos << 20) +
         ((ofs & 1016   ) << 22) +       /* bits 31..25 = ofs[9..3] */
         ((ofs & 7      ) <<  9));       /* bits 11..7  = ofs[2..0] 0 0  */
         /* SW REG[reg_pos], (ofs+1)(REG[2+global]) */
 }
 
-void emit_load(unsigned int global, unsigned int ofs)
+void emit_load(unsigned int sym_type, unsigned int ofs)
 {
-    if (global == 0) {
+    if (sym_type == 74) {
         if (ofs < 13) {
             emit_isdo(0, local_reg[ofs], reg_pos, 19);
                 /* ADDI REG[reg_pos], REG[local_reg[ofs]], 0 */
@@ -201,7 +202,7 @@ void emit_load(unsigned int global, unsigned int ofs)
         }
         /* more than 13 local vars: fall back to stack */
     }
-    emit_isdo(ofs << 2, global, reg_pos, 73731);
+    emit_isdo(ofs << 2, sym_type & 1, reg_pos, 73731);
         /* LW reg_pos, ofs(REG[2+global]) */
     last_insn_type = 13; /* push mem */
 }
@@ -306,13 +307,13 @@ void emit_comp(unsigned int condition)
                 /* xori REG, REG, 1         >= or <= */
         }
     }
-    last_insn_type = 13; /* arith comparison */
+    last_insn_type = 15; /* arith comparison */
 }
 
-void emit_index_push(unsigned int global, unsigned int ofs)
+void emit_index_push(unsigned int sym_type, unsigned int ofs)
 {
     emit_push();
-    emit_load(global, ofs);
+    emit_load(sym_type, ofs);
     emit_operation(6); /* add */
     emit_push();
     last_insn_type = 14; /* arith operation */
@@ -326,21 +327,25 @@ void emit_pop_store_array()
         /* 00B50023  SB A1,0(A0) */
 }
 
-void emit_index_load_array(unsigned int global, unsigned int ofs)
+void emit_index_load_array(unsigned int sym_type, unsigned int ofs)
 {
     unsigned int imm = 0;
     unsigned int rs = reg_pos;
     if (last_insn_type == 8) { /* push imm12 */
         imm = last_insn >> 20;
         code_pos = code_pos - 4;
-        rs = local_reg[ofs];
-        if ((global != 0) | (ofs >= 13)) {
-            emit_load(global, ofs);
-            rs = reg_pos;
+        emit_load(sym_type, ofs);
+
+        /* the first 13 local vars are in registers */
+        if (sym_type == 74) {
+            if (ofs < 13) {
+                code_pos = code_pos - 4;
+                rs = local_reg[ofs];
+            }
         }
     }
     else {
-        emit_index_push(global, ofs);
+        emit_index_push(sym_type, ofs);
         reg_pos = reg_pos - 1;
     }
     emit_isdo(imm, rs, reg_pos, 16387);
@@ -444,7 +449,7 @@ unsigned int emit_local_var(unsigned int init)
     if (n > max_locals) max_locals = n;
 
     if (init != 0) {                                 /* set initial value */
-        emit_store(0, n);
+        emit_store(74, n);
     }
 
     return n;
@@ -489,7 +494,7 @@ unsigned int emit_call(unsigned int ofs, unsigned int pop, unsigned int save)
 
         reg_pos = 10;
         while (reg_pos < save) {
-            emit_load(0, num_locals);
+            emit_load(74/*local var*/, num_locals);
             reg_pos = reg_pos + 1;
             num_locals = num_locals - 1;
         }

@@ -439,33 +439,37 @@ void pop_to_reg(unsigned int dest_reg)
     }
 }
 
-/* Store accumulator in a global(1) or local(0) variable with address `ofs`
+/* Store accumulator in a global(71) or local(74) variable with address `ofs`
    Function arguments have global=0 and ofs=1,2,3,... For other variables,
    ofs is the return value of emit_local_var() or emit_global_var() */
-void emit_store(unsigned int global, unsigned int ofs)
+void emit_store(unsigned int sym_type, unsigned int ofs)
 {
-    if (global) {
+    if (sym_type == 71) {
+        /* global variable */
         unsigned int i = fuse_load_local(reg_pos) | ((ofs << 2) & 2047);
         emit_odai(53, (ofs >> 9) & 31, 2, i);
             /* l.sw OFS(r2), REG */
     }
     else {
+        /* local variable */
         pop_to_reg(ofs + 12);
     }
     last_insn_type = 1; /* pop and store */
 }
 
-/* Load accumulator from a global(1) or local(0) variable with address `ofs`
+/* Load accumulator from a global(71) or local(74) variable with address `ofs`
    Function arguments have global=0 and ofs=1,2,3,... For other variables,
    ofs is the return value of emit_local_var() or emit_global_var() */
-void emit_load(unsigned int global, unsigned int ofs)
+void emit_load(unsigned int sym_type, unsigned int ofs)
 {
-    if (global) {
+    if (sym_type == 71) {
+        /* global variable */
         emit_odai(33, reg_pos, 2, ofs << 2);
             /* l.lwz REG, OFS(r2) */
         last_insn_type = 13; /* push global */
     }
     else {
+        /* local variable */
         emit_odai(56, reg_pos, ofs + 12, 4);
             /* l.ori REG[reg_pos], REG[ofs+12], r0 */
         last_insn_type = 11; /* push register */
@@ -865,10 +869,10 @@ unsigned int emit_pre_call()
  * Arrays
  **********************************************************************/
 
-/* input:  global(1) or local(0) variable used as a pointer
+/* input:  global(71) or local(74) variable used as a pointer
            accumulator contains the index into the array the pointer points to
    output: push pointer to the array element */
-void emit_index_push(unsigned int global, unsigned int ofs)
+void emit_index_push(unsigned int sym_type, unsigned int ofs)
 {
     unsigned int op = 56;
     unsigned int b = ofs + 12;
@@ -884,7 +888,8 @@ void emit_index_push(unsigned int global, unsigned int ofs)
         code_pos = code_pos - 4;
     }
 
-    if (global) {
+    if (sym_type == 71) {
+        /* global variable */
         emit_odai(33, reg_pos+1, 2, ofs << 2);
             /* l.lwz REG[reg_pos+1], OFS(r2) */
         b = reg_pos + 1;
@@ -905,12 +910,12 @@ void emit_pop_store_array()
         /* D8 03 20 00  l.sb 0(r3), r4 */
 }
 
-/* Read global(1) or local(0) variable with address `ofs` as base pointer.
+/* Read global(71) or local(74) variable with address `ofs` as base pointer.
    Add index (in accumulator) to the base pointer.
    Load byte from the computed address and store in accumulator.  */
-void emit_index_load_array(unsigned int global, unsigned int ofs)
+void emit_index_load_array(unsigned int sym_type, unsigned int ofs)
 {
-    emit_index_push(global, ofs);
+    emit_index_push(sym_type, ofs);
     reg_pos = reg_pos - 1;
     emit_odri(35, reg_pos, 0);
         /* l.lbz REG[reg_pos], 0(REG[reg_pos]) */

@@ -493,21 +493,21 @@ static void parse_factor(void)
             parse_expression();
             expect(']');
             if (accept('=') != 0) {
-                emit_index_push(type & 1, ofs);
+                emit_index_push(type, ofs);
                 parse_expression();
                 emit_pop_store_array();
             }
             else {
-                emit_index_load_array(type & 1, ofs);
+                emit_index_load_array(type, ofs);
             }
         }
         else { /* variable */
             if (accept('=') != 0) {
                 parse_expression();
-                emit_store(type & 1, ofs);
+                emit_store(type, ofs);
             }
             else {
-                emit_load(type & 1, ofs);
+                emit_load(type, ofs);
             }
         }
     }

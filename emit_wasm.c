@@ -195,9 +195,9 @@ void emit_string(unsigned int len, char *s)
 }
 
 
-void emit_store(unsigned int global, unsigned int ofs)
+void emit_store(unsigned int sym_type, unsigned int ofs)
 {
-    if (global != 0) {
+    if (sym_type == 71) {
         emit(36);                               /* 24           global.set */
     }
     else {
@@ -209,9 +209,9 @@ void emit_store(unsigned int global, unsigned int ofs)
 }
 
 
-void emit_load(unsigned int global, unsigned int ofs)
+void emit_load(unsigned int sym_type, unsigned int ofs)
 {
-    if (global != 0) {
+    if (sym_type == 71) {
         emit(35);                               /* 23           global.get */
     }
     else {
@@ -223,9 +223,9 @@ void emit_load(unsigned int global, unsigned int ofs)
 }
 
 
-void emit_index_push(unsigned int which, unsigned int ofs)
+void emit_index_push(unsigned int sym_type, unsigned int ofs)
 {
-    emit_load(which, ofs);
+    emit_load(sym_type, ofs);
     emit(106);                                  /* 6A           i32.add */
     stack_pos = stack_pos - 1;
 }
@@ -238,9 +238,9 @@ void emit_pop_store_array()
 }
 
 
-void emit_index_load_array(unsigned int which, unsigned int ofs)
+void emit_index_load_array(unsigned int sym_type, unsigned int ofs)
 {
-    emit_index_push(which, ofs);
+    emit_index_push(sym_type, ofs);
     emit(45); emit(0); emit(0);                 /* 2D 00 00     i32.load8_u */
 }
 
