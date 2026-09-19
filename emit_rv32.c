@@ -577,8 +577,11 @@ void emit_func_end()
     /* emit jump to epilogue */
     emit32(stack_size + 659);
         /* 00000593  ADDI X5, X0, stack_size */
+    if (m > 12) {
+        m = 12;
+    }
     emit32(insn_jal(0, 236 - (m << 2) - cp));
-        /* J _epilogue + 4*(12-num_locals) */
+        /* J _epilogue + 4*(12-restore) */
 }
 
 unsigned int emit_scope_begin()
