@@ -549,13 +549,21 @@ void emit_func_end()
     set_32bit(buf + function_start_pos, 65811 - stack_size);
         /* 00010113  ADD SP, SP, 0-stack_size */
 
-    /* entry to prologue depends on number of local variables */
+    /* Entry to prologue and epilogue depends on number of local variables.
+       If there are more than 12 local variables, the entry address is the same
+       as for 12, because the extra variables are stored on the stack, not in
+       registers that have to be spilled. */
     unsigned int entry = 100 - function_start_pos;
     if (m < 9) {
         entry = entry + 80 - (m << 3);
-    } else if (m < 12) {
+    }
+    else if (m < 12) {
         entry = entry + 48 - (m << 2);
     }
+    else {
+        m = 12; /* for epilogue */
+    }
+
     entry = insn_jal(5, entry);
         /* J _prologue */
     set_32bit(buf + function_start_pos + 4, entry);
