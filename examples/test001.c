@@ -1,5 +1,5 @@
 /* Test RV32 correct call address of epilogue when using more than 12 local
- * variables are used. Bug reported by danous in PR #1.
+ * variables are used. Bug reported by danodus in PR #1.
  *
  * Must be prefixed with architecture-specific code for write().
  *
