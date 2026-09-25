@@ -357,7 +357,8 @@ void emit_fix_call(unsigned int from, unsigned int to)
 void emit_push()
 {
     reg_pos = reg_pos + 1;
-    if (reg_pos > 11) error(201); /* r3 ... r11 can be used */
+    if (reg_pos > 11) error(200); /* Error: expression stack overflow */
+        /* r3 ... r11 can be used */
 }
 
 /* set accumulator to a unsigend 32 bit number */
@@ -806,6 +807,8 @@ unsigned int emit_local_var(unsigned int init)
 {
     unsigned int n = num_locals + 1;
     num_locals = n;
+    if (n > 19) error(201); /* Error: too many local variables */
+        /* r13 ... r31 can be used */
     if (n > max_locals) {
         max_locals = n;
     }

@@ -63,9 +63,12 @@ unsigned int last_branch_target;
        instructions. */
 unsigned int num_scope;
 unsigned int num_calls;
-unsigned int max_reg_pos;
 
 char *local_reg;
+
+
+
+static void error(unsigned int no);
 
 
 
@@ -127,10 +130,42 @@ unsigned int insn_jal(unsigned int rd, unsigned int immj)
         111;                            /* bits  6..0  = 0x6f (jal) */
 }
 
+void dec_reg_pos()
+{
+    /* expression stack register:
+       x10 ... x17 x5 x6 x7 x28 x29 x30 x31 */
+    unsigned int r = reg_pos;
+    if (r == 5) {
+        r = 17;
+    }
+    else if (r == 28) {
+        r = 7;
+    }
+    else {
+        /* no underflow possible */
+        r = r - 1;
+    }
+    reg_pos = r;
+}
+
 void emit_push()
 {
-    reg_pos = reg_pos + 1;
-    if (reg_pos > max_reg_pos) max_reg_pos = reg_pos;
+    /* expression stack register:
+       x10 ... x17 x5 x6 x7 x28 x29 x30 x31 */
+    unsigned int r = reg_pos;
+    if (r == 17) {
+        r = 5;
+    }
+    else if (r == 7) {
+        r = 28;
+    }
+    else if (r == 31) {
+        error(200); /* Error: expression stack overflow */
+    }
+    else {
+        r = r + 1;
+    }
+    reg_pos = r;
 }
 
 void emit_number(unsigned int imm)
@@ -241,7 +276,7 @@ void emit_operation(unsigned int operation)
 */
 
     unsigned int imm = reg_pos;
-    reg_pos = imm - 1;
+    dec_reg_pos();
 
     unsigned int shift = operation + operation + operation - 3;
     unsigned int op = (((1025264681 >> shift) & 7) << 12) + 51;
@@ -276,7 +311,9 @@ void emit_operation(unsigned int operation)
 
 void emit_comp(unsigned int condition)
 {
-    reg_pos = reg_pos - 1;
+    unsigned int rt = reg_pos;
+    dec_reg_pos();
+    unsigned int rs = reg_pos;
 
     if (condition < 2) {
         if ((last_insn & 4294963327) == 19) {
@@ -284,27 +321,31 @@ void emit_comp(unsigned int condition)
             code_pos = code_pos - 4;
         }
         else {
-            emit_isdo(reg_pos, reg_pos, reg_pos, 1074790451);
-                /* sub REG, REG, REG+1 */
+            emit_isdo(rt, rs, rs, 1073741875);
+                /* 40000033  sub REG, REG, REG+1 */
         }
         if (condition == 0) {
-            emit_isdo(0, reg_pos, reg_pos, 1060883);
+            emit_isdo(0, rs, rs, 1060883);
                 /* sltiu REG, REG, 1        == */
         }
         else {
-            emit_isdo(reg_pos, 0, reg_pos, 12339);
-                /* sltu REG, x0, REG        != */
+            emit_isdo(rs, 0, rs, 12339);
+                /* 00003033  sltu REG, x0, REG        != */
         }
     }
     else {
-        unsigned int o = 45107;
-            /* 0000B033  sltu REG, REG+1, REG     > or <= */
-        if (condition < 4) o = 1060915;
-            /* 00103033  sltu REG, REG, REG+1     < or >= */
-        emit_isdo(reg_pos, reg_pos, reg_pos, o);
+        unsigned int ri = rs;
+        if (condition < 4) {
+            ri = rt;
+            rt = rs;
+            /*emit_isdo(rt, rs, rs, 12339);*/
+                /* 00003033  sltu REG, REG, REG+1     < or >= */
+        }
+        emit_isdo(ri, rt, rs, 12339);
+                /* 00003033  sltu REG, REG+1, REG     > or <= */
         if ((condition & 1) != 0) {
-            emit_isdo(0, reg_pos, reg_pos, 1064979);
-                /* xori REG, REG, 1         >= or <= */
+            emit_isdo(0, rs, rs, 1064979);
+                /* 00104013  xori REG, REG, 1         >= or <= */
         }
     }
     last_insn_type = 15; /* arith comparison */
@@ -346,7 +387,7 @@ void emit_index_load_array(unsigned int sym_type, unsigned int ofs)
     }
     else {
         emit_index_push(sym_type, ofs);
-        reg_pos = reg_pos - 1;
+        dec_reg_pos();
     }
     emit_isdo(imm, rs, reg_pos, 16387);
         /* LBU REG[reg_pos], 0(REG[reg_pos]) */
@@ -466,7 +507,8 @@ unsigned int emit_pre_call()
     /* save expression stack it it is not empty */
     unsigned int r = reg_pos;
     if (r > 10) {
-        /* save currently used expression stack registers */
+        /* Above x17 increasing the register number is more complicated.
+           Therefore do not use more than 8 arguments (FIXME?) */
         while (reg_pos > 10) {
             reg_pos = reg_pos - 1;
             emit_local_var(1);
@@ -516,7 +558,6 @@ unsigned int emit_func_begin(unsigned int n)
     unsigned int cp8 = cp0 + 8;
     function_start_pos = cp0;
     reg_pos = 10;
-    max_reg_pos = 10;
     num_locals = n;
     max_locals = n;
     num_scope = 0;

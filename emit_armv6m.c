@@ -78,8 +78,8 @@ static void empty_immpool(void)
         emit16(0);
     }
     if (code_pos > (immpos_base + 1020)) {
-        error(200);
-        /* too late to empty imm pool: imm pool to far away */
+        error(202); /* Error: imm pool to far away */
+            /* Maybe the imm pool was emptied too late */
     }
 
     unsigned int code_base = code_pos >> 2;

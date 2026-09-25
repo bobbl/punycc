@@ -12,6 +12,11 @@ Error return codes
     0105 function redefined
     0106 type expected
 
+    0200 expression stack overflow (OR1K, RV32IM)
+    0201 too many local variables (OR1K)
+    0202 imm pool to far away (ARMv6-M)
+
+
 Symbol Type
 
     71 global variable
