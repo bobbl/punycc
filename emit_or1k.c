@@ -53,7 +53,8 @@ unsigned int last_branch_target;
 
 static void error(unsigned int no);
 /*
-201 expression stack exceeded (r3...r11)
+200 expression stack overflow (r3...r11)
+201 too many local variables (r13...r31)
 */
 
 
@@ -678,7 +679,7 @@ void emit_else_end(unsigned int insn_pos)
    Return address where the jump target address will be written later  */
 unsigned int emit_then_else(unsigned int insn_pos)
 {
-    fill_delay_slot(0, 0); 
+    fill_delay_slot(0, 0);
         /* branch target doesn't care, because emit_else_end() will overwrite
            this instruction with l.j */
     emit_then_end(insn_pos);

@@ -16,7 +16,6 @@ Error return codes
     0201 too many local variables (OR1K)
     0202 imm pool to far away (ARMv6-M)
 
-
 Symbol Type
 
     71 global variable
@@ -290,7 +289,7 @@ static unsigned int sym_lookup(void)
 static void sym_append(unsigned int addr, unsigned int type)
 {
     unsigned int i = token_int;
-    syms_head = syms_head - token_int - 6;
+    syms_head = syms_head - i - 6;
     unsigned char *s = buf + syms_head;
 
     set_32bit(s, addr);
@@ -309,7 +308,7 @@ static void sym_append(unsigned int addr, unsigned int type)
 static void sym_fix(unsigned int sym, unsigned int func_pos)
 {
     unsigned char *s = buf + sym;
-    unsigned int i = get_32bit(buf + sym);
+    unsigned int i = get_32bit(s);
     unsigned int next;
 
     if (s[4] != 72) {

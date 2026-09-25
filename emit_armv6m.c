@@ -204,23 +204,22 @@ static unsigned int swap_or_pop(void)
 
     if (((b6543>>16) & 65535) == 46081) /* 01 B4   PUSH {R0} */
     {
+        code_pos = code_pos - 4;
         if (b1 == 32) {                 /* ?? 20   MOVS R0, imm */
-            code_pos = code_pos - 4;
             emit(b2);                   /* ?? 21   MOVS R1, #?? */
             emit(33);
             return 7;
         }
         if (b1 == 152) {                /* ?? 98   LDR R0, [SP, #??] */
-            code_pos = code_pos - 4;
             emit(b2 - 1);               /* ?? 99   LDR R1, [SP, #??-1] */
             emit(153);
             return 7;
         }
         if (b1 == 72) {                 /* ?? 48   LDR R0, [PC, #??] */
-            code_pos = code_pos - 4;
             adjust_immpool_load();      /* ?? 49   LDR R1, [PC, #??] */
             return 7;
         }
+        code_pos = code_pos + 4;
     }
     /* if (((b6543 & 0xFF00FFFF) == 0x4900B401) */
     if ((((b6543 & 4278255615) == 1224782849)
