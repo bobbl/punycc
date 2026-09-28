@@ -507,10 +507,8 @@ unsigned int emit_pre_call()
     /* save expression stack it it is not empty */
     unsigned int r = reg_pos;
     if (r > 10) {
-        /* Above x17 increasing the register number is more complicated.
-           Therefore do not use more than 8 arguments (FIXME?) */
-        while (reg_pos > 10) {
-            reg_pos = reg_pos - 1;
+        while (reg_pos != 10) {
+            dec_reg_pos();
             emit_local_var(1);
         }
     }
